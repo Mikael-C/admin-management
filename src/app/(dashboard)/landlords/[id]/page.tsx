@@ -1,37 +1,52 @@
-import { prisma } from '@/lib/db'
+'use client'
+
+import { useEffect, useState } from 'react'
 import { formatCurrency } from '@/lib/utils'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { useParams } from 'next/navigation'
 import { PrintButton } from '@/components/ui/print-button'
 
-export default async function LandlordDetail({ params }: { params: Promise<{ id: string }> }) {
-  const resolvedParams = await params
-  const id = parseInt(resolvedParams.id)
-  if (isNaN(id)) notFound()
+export default function LandlordDetail() {
+  const params = useParams()
+  const id = params?.id
+  const [landlord, setLandlord] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
 
-  const landlord = await prisma.landlord.findUnique({
-    where: { id },
-    include: {
-      properties: {
-        include: {
-          tenants: true,
-          rents: { select: { credit: true } },
-          expenses: { select: { debit: true } }
-        }
-      }
-    }
-  })
+  useEffect(() => {
+    if (!id) return
+    fetch(`/api/landlords/${id}`)
+      .then((r) => {
+        if (r.status === 404) { setNotFound(true); return null }
+        return r.json()
+      })
+      .then((d) => {
+        if (d) setLandlord(d)
+        setLoading(false)
+      })
+      .catch(() => setLoading(false))
+  }, [id])
 
-  if (!landlord) notFound()
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    )
+  }
 
-  // Calc totals
-  let totalRent = 0
-  let totalExpenses = 0
-  landlord.properties.forEach(p => {
-    p.rents.forEach(r => totalRent += r.credit || 0)
-    p.expenses.forEach(e => totalExpenses += e.debit || 0)
-  })
+  if (notFound || !landlord) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-gray-500">Landlord not found.</p>
+        <Link href="/landlords" className="text-blue-600 text-sm mt-2 inline-block hover:underline">← Back to Landlords</Link>
+      </div>
+    )
+  }
+
+  const totalRent = landlord.totalRentCollected ?? 0
+  const totalExpenses = landlord.totalExpenses ?? 0
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto pb-10 print:p-0">
@@ -67,9 +82,9 @@ export default async function LandlordDetail({ params }: { params: Promise<{ id:
           </div>
         </div>
 
-        <h2 className="text-xl font-bold mb-4">Properties ({landlord.properties.length})</h2>
+        <h2 className="text-xl font-bold mb-4">Properties ({(landlord.properties || []).length})</h2>
         <div className="space-y-4">
-          {landlord.properties.map(p => (
+          {(landlord.properties || []).map((p: any) => (
             <div key={p.id} className="border border-gray-200 dark:border-gray-800 rounded-xl p-4">
               <div className="flex justify-between items-start mb-4">
                 <div>
@@ -80,24 +95,21 @@ export default async function LandlordDetail({ params }: { params: Promise<{ id:
                   {p.status}
                 </span>
               </div>
-              
-              {p.tenants.length > 0 ? (
+              {p.tenants?.length > 0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm text-left">
                     <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500 font-medium">
                       <tr>
                         <th className="px-3 py-2 rounded-l-lg">Tenant</th>
                         <th className="px-3 py-2">Rent</th>
-                        <th className="px-3 py-2">Last Payment</th>
-                        <th className="px-3 py-2 rounded-r-lg">Status</th>
+                        <th className="px-3 py-2">Status</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {p.tenants.map(t => (
+                      {p.tenants.map((t: any) => (
                         <tr key={t.id}>
                           <td className="px-3 py-2">{t.name}</td>
                           <td className="px-3 py-2">{formatCurrency(t.rentAmount)}</td>
-                          <td className="px-3 py-2">{t.lastPaymentDate || '-'}</td>
                           <td className="px-3 py-2">{t.status}</td>
                         </tr>
                       ))}
@@ -105,11 +117,11 @@ export default async function LandlordDetail({ params }: { params: Promise<{ id:
                   </table>
                 </div>
               ) : (
-                <p className="text-sm text-gray-500 italic">No tenants linked to this property.</p>
+                <p className="text-sm text-gray-500 italic">No tenants linked.</p>
               )}
             </div>
           ))}
-          {landlord.properties.length === 0 && (
+          {(!landlord.properties || landlord.properties.length === 0) && (
             <p className="text-gray-500 text-sm">No properties registered.</p>
           )}
         </div>
