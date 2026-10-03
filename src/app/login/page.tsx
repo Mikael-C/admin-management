@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { signIn } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { Building2, Eye, EyeOff, Loader2 } from 'lucide-react'
 
@@ -9,27 +8,17 @@ export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    setError('')
     setLoading(true)
 
-    const result = await signIn('credentials', {
-      email,
-      password,
-      redirect: false,
-    })
+    // DEMO MODE: Accept any credentials — simulate a short loading delay
+    await new Promise((resolve) => setTimeout(resolve, 800))
 
-    if (result?.error) {
-      setError('Invalid email or password. Please try again.')
-      setLoading(false)
-    } else {
-      router.push('/dashboard')
-    }
+    router.push('/dashboard')
   }
 
   return (
@@ -42,6 +31,14 @@ export default function LoginPage() {
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Real Estate Admin</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Sign in to your admin portal</p>
+        </div>
+
+        {/* Demo notice */}
+        <div className="mb-4 flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse flex-shrink-0"></span>
+          <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
+            Demo Mode — Enter any email and password to continue
+          </p>
         </div>
 
         {/* Card */}
@@ -85,13 +82,6 @@ export default function LoginPage() {
                 </button>
               </div>
             </div>
-
-            {/* Error */}
-            {error && (
-              <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
-              </div>
-            )}
 
             {/* Submit */}
             <button

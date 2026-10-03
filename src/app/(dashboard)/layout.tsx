@@ -1,10 +1,6 @@
 import { AppShell } from '@/components/layout/app-shell'
-import { SessionProvider } from 'next-auth/react'
 
+// DEMO MODE: SessionProvider removed. Re-add when auth is re-enabled.
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  return (
-    <SessionProvider>
-      <AppShell>{children}</AppShell>
-    </SessionProvider>
-  )
+  return <AppShell>{children}</AppShell>
 }
