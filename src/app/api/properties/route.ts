@@ -14,8 +14,8 @@ export async function GET(request: Request) {
   const where: any = {}
   if (search) {
     where.OR = [
-      { name: { contains: search, mode: 'insensitive' } },
-      { address: { contains: search, mode: 'insensitive' } },
+      { name: { contains: search } },
+      { address: { contains: search } },
     ]
   }
   if (status) where.status = status
@@ -53,3 +53,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create property' }, { status: 500 })
   }
 }
+

@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 
   const where = search
     ? {
-        name: { contains: search, mode: 'insensitive' as const },
+        name: { contains: search },
       }
     : {}
 
@@ -55,3 +55,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create landlord' }, { status: 500 })
   }
 }
+

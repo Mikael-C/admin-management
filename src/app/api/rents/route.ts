@@ -12,9 +12,9 @@ export async function GET(request: Request) {
   const where: any = {}
   if (search) {
     where.OR = [
-      { receiptNo: { contains: search, mode: 'insensitive' } },
-      { tenant: { name: { contains: search, mode: 'insensitive' } } },
-      { property: { address: { contains: search, mode: 'insensitive' } } },
+      { receiptNo: { contains: search } },
+      { tenant: { name: { contains: search } } },
+      { property: { address: { contains: search } } },
     ]
   }
 
@@ -56,3 +56,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to record payment' }, { status: 500 })
   }
 }
+

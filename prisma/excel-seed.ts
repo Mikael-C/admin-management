@@ -148,7 +148,7 @@ async function main() {
   const rentRows = XLSX.utils.sheet_to_json(rentSheet, { defval: null }) as Record<string, unknown>[]
 
   let rentCount = 0
-  const rentBatch: Parameters<typeof prisma.rent.createMany>[0]['data'] = []
+  const rentBatch: any[] = []
 
   for (const row of rentRows) {
     const tenantId = cleanFloat(row['Tenant ID'])
@@ -217,7 +217,7 @@ async function main() {
     if (!sheet) continue
     const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[]
 
-    const batch: Parameters<typeof prisma.ledgerEntry.createMany>[0]['data'] = []
+    const batch: any[] = []
     for (const row of rows) {
       const particulars = cleanString(row['Particulars'])
       if (!particulars) continue

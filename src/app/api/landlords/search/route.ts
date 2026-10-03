@@ -13,10 +13,10 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Find landlord by name (case-insensitive partial match)
+    // Find landlord by name (case-insensitive partial match via Prisma)
     const landlord = await prisma.landlord.findFirst({
       where: {
-        name: { contains: name, mode: 'insensitive' },
+        name: { contains: name },
       },
       include: {
         properties: {
@@ -37,7 +37,21 @@ export async function GET(request: NextRequest) {
     let totalRentCollected = 0
     let totalExpenses = 0
 
-    for (const property of landlord.properties) {
+    // landlord.properties is typed via the include above
+    const props = landlord.properties as Array<{
+      id: number
+      name: string | null
+      address: string | null
+      city: string | null
+      state: string | null
+      type: string | null
+      status: string | null
+      tenants: Array<{ id: number; name: string; status: string | null; rentAmount: number | null }>
+      rents: Array<{ credit: number | null; amountPaid: number | null }>
+      expenses: Array<{ debit: number | null }>
+    }>
+
+    for (const property of props) {
       for (const rent of property.rents) {
         totalRentCollected += rent.credit ?? 0
       }
@@ -56,7 +70,7 @@ export async function GET(request: NextRequest) {
         email: landlord.email,
         address: landlord.address,
         createdAt: landlord.createdAt,
-        properties: landlord.properties.map((p) => ({
+        properties: props.map((p) => ({
           id: p.id,
           name: p.name,
           address: p.address,

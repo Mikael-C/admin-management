@@ -13,7 +13,7 @@ export async function GET(request: Request) {
 
   const where: any = {}
   if (search) {
-    where.name = { contains: search, mode: 'insensitive' }
+    where.name = { contains: search }
   }
   if (status && status !== 'All') where.status = status
   if (propertyId && propertyId !== 'All') where.propertyId = parseInt(propertyId)
@@ -49,3 +49,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create tenant' }, { status: 500 })
   }
 }
+
