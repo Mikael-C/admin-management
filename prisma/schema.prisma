@@ -1,0 +1,124 @@
+// This is your Prisma schema file
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Landlord {
+  id         Int        @id @default(autoincrement())
+  name       String
+  phone      String?
+  email      String?
+  address    String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+  properties Property[]
+
+  @@map("landlords")
+}
+
+model Property {
+  id            Int       @id @default(autoincrement())
+  landlordId    Int
+  name          String?
+  address       String?
+  city          String?
+  state         String?
+  type          String?
+  status        String?   @default("Active")
+  managementFee Float?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  landlord  Landlord   @relation(fields: [landlordId], references: [id])
+  tenants   Tenant[]
+  expenses  Expense[]
+  rents     Rent[]
+
+  @@map("properties")
+}
+
+model Tenant {
+  id              Int       @id @default(autoincrement())
+  name            String
+  propertyId      Int
+  rentAmount      Float?
+  lastPaymentDate String?
+  nextDueDate     String?
+  status          String?   @default("Current")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id])
+  rents    Rent[]
+
+  @@map("tenants")
+}
+
+model Rent {
+  id            Int       @id @default(autoincrement())
+  propertyId    Int?
+  tenantId      Int?
+  amountPaid    Float?
+  paymentDate   String?
+  paymentMethod String?
+  debit         Float?
+  credit        Float?
+  balance       Float?
+  receiptNo     String?
+  createdAt     DateTime  @default(now())
+
+  property Property? @relation(fields: [propertyId], references: [id])
+  tenant   Tenant?   @relation(fields: [tenantId], references: [id])
+
+  @@map("rents")
+}
+
+model Expense {
+  id            Int       @id @default(autoincrement())
+  propertyId    Int?
+  description   String?
+  debit         Float?
+  period        String?
+  credit        Float?
+  debitBalance  Float?
+  creditBalance Float?
+  balance       Float?
+  receiptNo     String?
+  createdAt     DateTime  @default(now())
+
+  property Property? @relation(fields: [propertyId], references: [id])
+
+  @@map("expenses")
+}
+
+model LedgerEntry {
+  id          Int      @id @default(autoincrement())
+  date        String?
+  receiptNo   String?
+  particulars String?
+  period      String?
+  debit       Float?
+  credit      Float?
+  balance     Float?
+  ledgerType  String?  @default("Ledger") // "Ledger" or "CompleteLedger"
+  createdAt   DateTime @default(now())
+
+  @@map("ledger_entries")
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("staff") // "admin", "staff", "viewer"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("users")
+}
