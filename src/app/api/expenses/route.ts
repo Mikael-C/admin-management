@@ -1,35 +1,19 @@
 import { NextResponse } from 'next/server'
-
-const descriptions = ['Plumbing and Maintenance', 'Electrical Repairs', 'Painting & Renovation', 'Security Installation', 'Generator Servicing', 'Roof Repairs', 'Landscaping', 'Water Supply Maintenance']
-const EXPENSES = Array.from({ length: 45 }, (_, i) => {
-  const d = new Date(2026, 9 - Math.floor(i / 8), 10 - (i % 8))
-  return {
-    id: i + 1,
-    receiptNo: `EXP-${2000 + i}`,
-    property: { address: `Plot ${(i % 3) + 1} Block ${Math.floor(i / 3) % 5 + 1}, Victoria Island` },
-    description: descriptions[i % descriptions.length],
-    period: `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct'][d.getMonth()]} ${d.getFullYear()}`,
-    debit: [50000, 75000, 120000, 85000, 60000][i % 5],
-    credit: 0,
-    balance: 0,
-    createdAt: d.toISOString(),
-  }
-})
+import { dataStore } from '@/lib/data-store'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
-  const search = (searchParams.get('search') || '').toLowerCase()
+  const search = searchParams.get('search') || undefined
+  const landlordId = searchParams.get('landlordId') ? parseInt(searchParams.get('landlordId')!) : undefined
+  const propertyId = searchParams.get('propertyId') ? parseInt(searchParams.get('propertyId')!) : undefined
   const page = parseInt(searchParams.get('page') || '1')
   const limit = parseInt(searchParams.get('limit') || '50')
 
-  let filtered = EXPENSES
-  if (search) {
-    filtered = filtered.filter(e =>
-      e.receiptNo.toLowerCase().includes(search) ||
-      e.description.toLowerCase().includes(search) ||
-      e.period.toLowerCase().includes(search)
-    )
-  }
+  const filtered = dataStore.getExpenses({
+    search,
+    landlordId,
+    propertyId,
+  })
 
   const start = (page - 1) * limit
   const expenses = filtered.slice(start, start + limit)
@@ -45,6 +29,24 @@ export async function GET(request: Request) {
   })
 }
 
-export async function POST() {
-  return NextResponse.json({ message: 'Demo mode — data is not persisted.' })
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const newExpense = {
+      id: dataStore.expenses.length + 1,
+      receiptNo: `EXP-${2000 + dataStore.expenses.length + 1}`,
+      propertyId: body.propertyId || 1,
+      description: body.description || 'General Expense',
+      period: body.period || 'Oct 2026',
+      debit: body.debit || body.amount || 0,
+      credit: 0,
+      balance: 0,
+      createdAt: new Date().toISOString(),
+      category: body.category || 'Maintenance',
+    }
+    dataStore.expenses.unshift(newExpense)
+    return NextResponse.json(newExpense, { status: 201 })
+  } catch {
+    return NextResponse.json({ error: 'Failed to record expense' }, { status: 400 })
+  }
 }

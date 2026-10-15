@@ -1,33 +1,44 @@
 import { NextResponse } from 'next/server'
-
-const LANDLORDS = [
-  { id: 1, name: 'Client Landlord 1', phone: '08012345670', email: 'landlord1@example.com', address: '10 Real Estate Avenue, Lagos', _count: { properties: 3 } },
-  { id: 2, name: 'Client Landlord 2', phone: '08012345671', email: 'landlord2@example.com', address: '11 Real Estate Avenue, Lagos', _count: { properties: 3 } },
-  { id: 3, name: 'Client Landlord 3', phone: '08012345672', email: 'landlord3@example.com', address: '12 Real Estate Avenue, Lagos', _count: { properties: 3 } },
-  { id: 4, name: 'Client Landlord 4', phone: '08012345673', email: 'landlord4@example.com', address: '13 Real Estate Avenue, Lagos', _count: { properties: 3 } },
-  { id: 5, name: 'Client Landlord 5', phone: '08012345674', email: 'landlord5@example.com', address: '14 Real Estate Avenue, Lagos', _count: { properties: 3 } },
-]
+import { dataStore } from '@/lib/data-store'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const search = (searchParams.get('search') || '').toLowerCase()
   const page = parseInt(searchParams.get('page') || '1')
-  const limit = parseInt(searchParams.get('limit') || '10')
+  const limit = parseInt(searchParams.get('limit') || '50')
 
-  const filtered = LANDLORDS.filter(l =>
-    !search || l.name.toLowerCase().includes(search)
-  )
+  let landlords = dataStore.getLandlords()
+  if (search) {
+    landlords = landlords.filter(l =>
+      l.name.toLowerCase().includes(search) ||
+      l.email.toLowerCase().includes(search) ||
+      l.phone.toLowerCase().includes(search)
+    )
+  }
 
   const start = (page - 1) * limit
-  const landlords = filtered.slice(start, start + limit)
+  const paginated = landlords.slice(start, start + limit)
 
   return NextResponse.json({
-    landlords,
-    total: filtered.length,
-    pages: Math.ceil(filtered.length / limit),
+    landlords: paginated,
+    total: landlords.length,
+    pages: Math.ceil(landlords.length / limit),
   })
 }
 
-export async function POST() {
-  return NextResponse.json({ message: 'Demo mode — data is not persisted.' })
+export async function POST(request: Request) {
+  try {
+    const body = await request.json()
+    const newLandlord = {
+      id: dataStore.landlords.length + 1,
+      name: body.name || 'New Landlord',
+      phone: body.phone || '08000000000',
+      email: body.email || `landlord${dataStore.landlords.length + 1}@example.com`,
+      address: body.address || 'Lagos, Nigeria',
+    }
+    dataStore.landlords.push(newLandlord)
+    return NextResponse.json(newLandlord, { status: 201 })
+  } catch {
+    return NextResponse.json({ error: 'Failed to create landlord' }, { status: 400 })
+  }
 }

@@ -6,11 +6,15 @@ import { Topbar } from './topbar'
 import { usePathname } from 'next/navigation'
 
 const pageTitles: Record<string, string> = {
-  '/dashboard': 'Dashboard',
+  '/dashboard': 'Company Overview',
+  '/landlord': 'Landlord Dashboard',
+  '/agent': 'Agent Dashboard',
+  '/maintenance': 'Maintenance & Repairs',
+  '/users': 'User & Role Access',
   '/landlords': 'Landlords',
   '/properties': 'Properties',
   '/tenants': 'Tenants',
-  '/rents': 'Rents & Payments',
+  '/rents': 'Rents & Revenue',
   '/expenses': 'Expenses',
 }
 
@@ -20,10 +24,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const title =
     Object.entries(pageTitles).find(([key]) => pathname === key || pathname.startsWith(key + '/'))?.[1] ??
-    'Admin Portal'
+    'EstatePro Portal'
 
   return (
-    <div className="flex h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden">
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-950 overflow-hidden text-gray-900 dark:text-gray-100">
       <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Topbar onMenuClick={() => setSidebarOpen(true)} title={title} />

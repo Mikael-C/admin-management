@@ -2,12 +2,13 @@ import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
 import './globals.css'
 import { ThemeProvider } from '@/components/providers/theme-provider'
+import { AuthProvider } from '@/components/providers/auth-context'
 
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Real Estate Admin — Management System',
-  description: 'Real Estate Records Management & Admin Portal',
+  title: 'Real Estate Admin — Multi-Role Management System',
+  description: 'Enterprise Real Estate Management Portal for Admins, Landlords, and Agents',
 }
 
 export default function RootLayout({
@@ -24,7 +25,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <AuthProvider>
+            {children}
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
