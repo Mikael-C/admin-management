@@ -37,6 +37,16 @@ model User {
   // Payout requests (as landlord)
   payoutRequests    PayoutRequest[]
 
+  // Activities
+  activityLogs      ActivityLog[]
+
+  // Newsletters sent
+  newslettersSent   Newsletter[]
+
+  // Invoices & Receipts
+  invoicesReceived  Invoice[]  @relation("InvoiceRecipient")
+  invoicesCreated   Invoice[]  @relation("InvoiceCreator")
+
   @@map("users")
 }
 
@@ -82,6 +92,7 @@ model Landlord {
   user        User?    @relation("UserLandlord", fields: [userId], references: [id])
   properties  Property[]
   payoutRequests PayoutRequest[]
+  invoices    Invoice[]
 
   @@map("landlords")
 }
@@ -134,6 +145,7 @@ model Property {
   rents         Rent[]
   expenses      Expense[]
   maintenanceRequests MaintenanceRequest[]
+  invoices      Invoice[]
 
   @@map("properties")
 }
@@ -301,4 +313,78 @@ model LedgerEntry {
   createdAt   DateTime @default(now())
 
   @@map("ledger_entries")
+}
+
+// ===========================
+// ACTIVITY LOGS
+// ===========================
+model ActivityLog {
+  id          Int      @id @default(autoincrement())
+  userId      Int?
+  userName    String
+  userRole    String
+  action      String   // e.g. "CREATE_PROPERTY", "APPROVE_PAYOUT", "LOG_PAYMENT", etc.
+  description String
+  entityType  String?  // e.g. "Payout", "Rent", "Property", "Invoice", "Message"
+  entityId    Int?
+  createdAt   DateTime @default(now())
+
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("activity_logs")
+}
+
+// ===========================
+// NEWSLETTERS
+// ===========================
+model Newsletter {
+  id          Int      @id @default(autoincrement())
+  title       String
+  content     String
+  targetRole  String   @default("all") // "all" | "landlord" | "agent"
+  senderId    Int
+  senderName  String
+  sentAt      DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  sender      User     @relation(fields: [senderId], references: [id])
+
+  @@map("newsletters")
+}
+
+// ===========================
+// INVOICES & RECEIPTS
+// ===========================
+model Invoice {
+  id             Int       @id @default(autoincrement())
+  invoiceNo      String    @unique
+  type           String    @default("Invoice") // "Invoice" | "Receipt"
+  recipientType  String    @default("landlord") // "landlord" | "agent" | "admin"
+  recipientName  String
+  recipientEmail String?
+  recipientPhone String?
+  userId         Int?
+  landlordId     Int?
+  propertyId     Int?
+  amount         Float
+  description    String?
+  items          String?   // JSON itemized list string
+  status         String    @default("Pending") // "Pending" | "Paid" | "Overdue" | "Cancelled"
+  issueDate      String
+  dueDate        String?
+  paidDate       String?
+  bankName       String?
+  accountNumber  String?
+  accountName    String?
+  notes          String?
+  createdById    Int
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user           User?     @relation("InvoiceRecipient", fields: [userId], references: [id], onDelete: SetNull)
+  landlord       Landlord? @relation(fields: [landlordId], references: [id], onDelete: SetNull)
+  property       Property? @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  createdBy      User      @relation("InvoiceCreator", fields: [createdById], references: [id])
+
+  @@map("invoices")
 }

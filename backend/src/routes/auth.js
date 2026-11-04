@@ -63,6 +63,17 @@ router.post('/login', async (req, res, next) => {
     else if (user.role === 'admin') redirectTo = '/dashboard'
     else if (user.role === 'super_admin') redirectTo = '/dashboard'
 
+    const { logActivity } = require('../lib/activity')
+    logActivity({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: 'LOGIN',
+      description: `${user.name} (${user.role.replace('_', ' ')}) logged into the portal`,
+      entityType: 'User',
+      entityId: user.id,
+    })
+
     res.json({
       success: true,
       token,

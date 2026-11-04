@@ -197,3 +197,26 @@ export const profileApi = {
   get: (userId: number) => api.get<any>(`/profile/${userId}`),
   update: (data: any) => api.put('/profile', data),
 }
+
+// ─── Activities ──────────────────────────────────────────────
+export const activitiesApi = {
+  list: (params?: Record<string, string>) => api.get<any>('/activities', params),
+}
+
+// ─── Newsletters ─────────────────────────────────────────────
+export const newslettersApi = {
+  list: (params?: Record<string, string>) => api.get<any>('/newsletters', params),
+  create: (data: { title: string; content: string; targetRole: string }) =>
+    api.post('/newsletters', data),
+  delete: (id: number) => api.delete(`/newsletters/${id}`),
+}
+
+// ─── Invoices & Receipts ─────────────────────────────────────
+export const invoicesApi = {
+  list: (params?: Record<string, string>) => api.get<any>('/invoices', params),
+  get: (id: number) => api.get<any>(`/invoices/${id}`),
+  create: (data: any) => api.post('/invoices', data),
+  updateStatus: (id: number, status: string, notes?: string) =>
+    api.patch(`/invoices/${id}/status`, { status, notes }),
+  delete: (id: number) => api.delete(`/invoices/${id}`),
+}

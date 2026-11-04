@@ -1,6 +1,7 @@
 const express = require('express')
 const { prisma } = require('../lib/db')
 const { authenticate, requireAdmin, requireSuperAdmin } = require('../middleware/auth')
+const { logActivity } = require('../lib/activity')
 
 const router = express.Router()
 router.use(authenticate)
@@ -117,6 +118,16 @@ router.post('/', async (req, res, next) => {
       }
     })
 
+    await logActivity({
+      userId: req.user.id,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'REQUEST_PAYOUT',
+      description: `${req.user.name} requested a payout of ₦${parseFloat(amount).toLocaleString()}`,
+      entityType: 'Payout',
+      entityId: payout.id,
+    })
+
     res.status(201).json({
       success: true,
       message: 'Payout request submitted successfully. Awaiting super admin approval.',
@@ -153,6 +164,16 @@ router.put('/:id/approve', requireSuperAdmin, async (req, res, next) => {
       include: {
         landlord: { select: { id: true, name: true } }
       }
+    })
+
+    await logActivity({
+      userId: req.user.id,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'APPROVE_PAYOUT',
+      description: `${req.user.name} approved payout #${payout.id} (₦${existing.amount.toLocaleString()}) for ${payout.landlord.name}`,
+      entityType: 'Payout',
+      entityId: payout.id,
     })
 
     res.json({
@@ -193,6 +214,16 @@ router.put('/:id/disburse', requireSuperAdmin, async (req, res, next) => {
       }
     })
 
+    await logActivity({
+      userId: req.user.id,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'DISBURSE_PAYOUT',
+      description: `${req.user.name} marked payout #${payout.id} (₦${existing.amount.toLocaleString()}) as disbursed to ${payout.landlord.name}`,
+      entityType: 'Payout',
+      entityId: payout.id,
+    })
+
     res.json({
       success: true,
       message: `Payout of ₦${existing.amount.toLocaleString()} disbursed to ${payout.landlord.name}.`,
@@ -224,6 +255,16 @@ router.put('/:id/reject', requireSuperAdmin, async (req, res, next) => {
         status: 'Rejected',
         adminNote: adminNote || 'Rejected by administrator.',
       }
+    })
+
+    await logActivity({
+      userId: req.user.id,
+      userName: req.user.name,
+      userRole: req.user.role,
+      action: 'REJECT_PAYOUT',
+      description: `${req.user.name} rejected payout #${existing.id} (₦${existing.amount.toLocaleString()})`,
+      entityType: 'Payout',
+      entityId: existing.id,
     })
 
     res.json({ success: true, message: 'Payout request rejected.', payout })

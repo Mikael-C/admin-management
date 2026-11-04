@@ -20,6 +20,9 @@ const payoutRoutes = require('./routes/payouts')
 const userRoutes = require('./routes/users')
 const profileRoutes = require('./routes/profile')
 const ledgerRoutes = require('./routes/ledger')
+const activityRoutes = require('./routes/activities')
+const newsletterRoutes = require('./routes/newsletters')
+const invoiceRoutes = require('./routes/invoices')
 
 const app = express()
 const PORT = process.env.PORT || 5000
@@ -146,6 +149,9 @@ app.use('/api/payouts', payoutRoutes)
 app.use('/api/users', userRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/ledger', ledgerRoutes)
+app.use('/api/activities', activityRoutes)
+app.use('/api/newsletters', newsletterRoutes)
+app.use('/api/invoices', invoiceRoutes)
 
 // ===========================
 // ERROR HANDLING

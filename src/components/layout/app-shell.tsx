@@ -20,6 +20,9 @@ const pageTitles: Record<string, string> = {
   '/payouts': 'Payout Requests',
   '/profile': 'My Profile',
   '/ledger': 'Ledger',
+  '/activities': 'System Activities',
+  '/newsletters': 'Newsletters & Broadcasts',
+  '/invoices': 'Invoices & Receipts',
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {

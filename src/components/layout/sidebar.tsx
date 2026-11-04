@@ -17,6 +17,9 @@ import {
   DollarSign,
   User,
   BookOpen,
+  Activity,
+  Megaphone,
+  FileText,
   Briefcase,
   LogOut,
 } from 'lucide-react'
@@ -40,6 +43,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         { href: '/rents', label: 'Rent Payments', icon: CreditCard },
         { href: '/expenses', label: 'Property Expenses', icon: Receipt },
         { href: '/maintenance', label: 'Repairs & Requests', icon: Wrench },
+        { href: '/invoices', label: 'Invoices & Receipts', icon: FileText },
         { href: '/payouts', label: 'Payout Requests', icon: DollarSign },
         { href: '/messages', label: 'Messages', icon: MessageSquare },
         { href: '/profile', label: 'My Profile', icon: User },
@@ -52,6 +56,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         { href: '/properties', label: 'Assigned Properties', icon: Building2 },
         { href: '/tenants', label: 'Tenant Occupancy', icon: UserCheck },
         { href: '/maintenance', label: 'Maintenance Requests', icon: Wrench },
+        { href: '/invoices', label: 'Invoices & Receipts', icon: FileText },
         { href: '/messages', label: 'Messages', icon: MessageSquare },
         { href: '/profile', label: 'My Profile', icon: User },
       ]
@@ -60,6 +65,9 @@ export function Sidebar({ open, onClose }: SidebarProps) {
     // admin and super_admin
     return [
       { href: '/dashboard', label: 'Company Overview', icon: LayoutDashboard },
+      { href: '/activities', label: 'System Activities', icon: Activity },
+      { href: '/invoices', label: 'Invoices & Receipts', icon: FileText },
+      { href: '/newsletters', label: 'Newsletters', icon: Megaphone },
       { href: '/landlords', label: 'Landlords', icon: Users },
       { href: '/properties', label: 'Properties', icon: Building2 },
       { href: '/tenants', label: 'Tenants', icon: UserCheck },
