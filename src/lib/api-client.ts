@@ -213,7 +213,8 @@ export const newslettersApi = {
 
 // ─── Invoices & Receipts ─────────────────────────────────────
 export const invoicesApi = {
-  list: (params?: Record<string, string>) => api.get<any>('/invoices', params),
+  list: (page = 1, limit = 20, filters: Record<string, any> = {}) =>
+    api.get<any>('/invoices', { page: String(page), limit: String(limit), ...filters }),
   get: (id: number) => api.get<any>(`/invoices/${id}`),
   create: (data: any) => api.post('/invoices', data),
   updateStatus: (id: number, status: string, notes?: string) =>

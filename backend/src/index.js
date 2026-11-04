@@ -111,6 +111,16 @@ app.use('/api/auth/login', authLimiter)
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
+// ===========================
+// STATIC FILES (Receipt Images)
+// ===========================
+// Serves backend/public/ at /public/* — e.g. /public/receipts/Chukwu Joy/67 Kenyatta street/image.jpg
+app.use('/public', (req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*')
+  res.header('Cross-Origin-Resource-Policy', 'cross-origin')
+  next()
+}, express.static(require('path').join(__dirname, '..', 'public')))
+
 // Logging
 if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('combined'))

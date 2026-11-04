@@ -1,947 +1,716 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/providers/auth-context'
 import { invoicesApi, propertiesApi, landlordsApi } from '@/lib/api-client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import {
-  FileText,
-  Plus,
-  Search,
-  Filter,
-  Printer,
-  CheckCircle2,
-  Clock,
-  AlertCircle,
-  Building2,
-  Users,
-  Eye,
-  Trash2,
-  Loader2,
-  X,
-  CreditCard,
-  DollarSign,
-  Download,
-  Share2
+  FileText, Plus, Search, Filter, Printer, CheckCircle2, Clock,
+  AlertCircle, Building2, Users, Eye, Trash2, Loader2, X, ChevronDown,
+  ChevronRight, Image as ImageIcon, Download, ZoomIn, Receipt, Home,
+  DollarSign, Calendar
 } from 'lucide-react'
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+interface Invoice {
+  id: number
+  invoiceNo: string
+  type: 'Invoice' | 'Receipt'
+  recipientName: string
+  recipientEmail?: string
+  landlordId?: number
+  propertyId?: number
+  amount: number
+  description?: string
+  status: string
+  issueDate: string
+  paidDate?: string
+  imageUrl?: string
+  notes?: string
+  landlord?: { id: number; name: string }
+  property?: { id: number; address: string }
+}
+
+interface GroupedReceipts {
+  [landlordName: string]: {
+    landlordId: number
+    properties: {
+      [propertyAddress: string]: {
+        propertyId: number
+        receipts: Invoice[]
+      }
+    }
+  }
+}
 
 export default function InvoicesPage() {
   const { user, role } = useAuth()
   const isSuperAdminOrAdmin = role === 'super_admin' || role === 'admin'
 
-  const [invoices, setInvoices] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [total, setTotal] = useState(0)
-  const [totalAmount, setTotalAmount] = useState(0)
-  const [paidAmount, setPaidAmount] = useState(0)
-  const [pendingAmount, setPendingAmount] = useState(0)
-  const [page, setPage] = useState(1)
-  const limit = 25
+  // Tab: 'gallery' (image receipts) or 'list' (all invoices/text)
+  const [activeTab, setActiveTab] = useState<'gallery' | 'list'>('gallery')
 
-  // Filter options loaded from database
+  // Gallery state
+  const [receipts, setReceipts] = useState<Invoice[]>([])
+  const [grouped, setGrouped] = useState<GroupedReceipts>({})
+  const [expandedLandlords, setExpandedLandlords] = useState<Set<string>>(new Set())
+  const [expandedProperties, setExpandedProperties] = useState<Set<string>>(new Set())
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; invoice: Invoice } | null>(null)
+
+  // List/invoice state
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [total, setTotal] = useState(0)
+  const [page, setPage] = useState(1)
+  const limit = 20
+
   const [propertiesList, setPropertiesList] = useState<any[]>([])
   const [landlordsList, setLandlordsList] = useState<any[]>([])
-
-  // Active filters
   const [search, setSearch] = useState('')
-  const [typeFilter, setTypeFilter] = useState('all') // 'all' | 'Invoice' | 'Receipt'
-  const [statusFilter, setStatusFilter] = useState('all') // 'all' | 'Pending' | 'Paid' | 'Overdue'
+  const [typeFilter, setTypeFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all')
   const [propertyFilter, setPropertyFilter] = useState('all')
   const [landlordFilter, setLandlordFilter] = useState('all')
 
-  // Modals
+  const [loading, setLoading] = useState(true)
   const [showGenerateModal, setShowGenerateModal] = useState(false)
   const [generating, setGenerating] = useState(false)
-  const [viewingInvoice, setViewingInvoice] = useState<any>(null)
+  const [viewingInvoice, setViewingInvoice] = useState<Invoice | null>(null)
   const [statusMsg, setStatusMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
-  // Generate Form state
   const [form, setForm] = useState({
-    type: 'Invoice',
-    recipientType: 'landlord', // 'landlord' | 'agent' | 'admin'
-    recipientName: '',
-    recipientEmail: '',
-    recipientPhone: '',
-    landlordId: '',
-    propertyId: '',
-    amount: '',
-    description: '',
-    status: 'Pending',
-    issueDate: new Date().toISOString().split('T')[0],
-    dueDate: '',
-    bankName: 'Access Bank',
-    accountNumber: '0123456789',
+    type: 'Invoice', recipientType: 'landlord', recipientName: '',
+    recipientEmail: '', recipientPhone: '', landlordId: '', propertyId: '',
+    amount: '', description: '', status: 'Pending',
+    issueDate: new Date().toISOString().split('T')[0], dueDate: '',
+    bankName: 'Access Bank', accountNumber: '0123456789',
     accountName: 'EstatePro Management Ltd',
-    notes: 'Thank you for your business. Please make payments to the account details provided above.',
+    notes: 'Thank you for your business.',
   })
 
-  // Load properties and landlords for filter dropdowns & generator
+  // ─── Load meta data ───────────────────────────────────────────────────────
   useEffect(() => {
     async function loadMeta() {
       try {
-        const [propsRes, lndRes] = await Promise.all([
-          propertiesApi.list({ limit: '100' }),
-          landlordsApi.list({ limit: '100' }),
-        ])
-        setPropertiesList(propsRes.properties || [])
-        setLandlordsList(lndRes.landlords || [])
-      } catch (err) {
-        console.error('Failed to load filter options', err)
-      }
+        const [pRes, lRes] = await Promise.all([propertiesApi.list(1, 200), landlordsApi.list(1, 200)])
+        setPropertiesList(pRes.properties || [])
+        setLandlordsList(lRes.landlords || [])
+      } catch { /* non-critical */ }
     }
     loadMeta()
   }, [])
 
-  // Fetch invoices with active filters
-  const fetchInvoices = async () => {
+  // ─── Load receipts for gallery ────────────────────────────────────────────
+  useEffect(() => {
+    if (activeTab === 'gallery') loadGallery()
+  }, [activeTab])
+
+  async function loadGallery() {
     setLoading(true)
     try {
-      const params: Record<string, string> = {
-        page: String(page),
-        limit: String(limit),
-      }
-      if (typeFilter !== 'all') params.type = typeFilter
-      if (statusFilter !== 'all') params.status = statusFilter
-      if (propertyFilter !== 'all') params.propertyId = propertyFilter
-      if (landlordFilter !== 'all') params.landlordId = landlordFilter
-      if (search.trim()) params.search = search.trim()
+      // Fetch ALL receipts (type=Receipt) with images
+      const res = await invoicesApi.list(1, 500, { type: 'Receipt' })
+      const all: Invoice[] = res.invoices || []
+      setReceipts(all)
 
-      const res = await invoicesApi.list(params)
-      setInvoices(res.invoices || [])
-      setTotal(res.total || 0)
-      setTotalAmount(res.totalAmount || 0)
-      setPaidAmount(res.paidAmount || 0)
-      setPendingAmount(res.pendingAmount || 0)
+      // Group by landlord → property
+      const groups: GroupedReceipts = {}
+      for (const inv of all) {
+        const lName = inv.landlord?.name || inv.recipientName || 'Unknown Landlord'
+        const pAddr = inv.property?.address || 'Unknown Property'
+        const lId = inv.landlordId || 0
+        const pId = inv.propertyId || 0
+        if (!groups[lName]) groups[lName] = { landlordId: lId, properties: {} }
+        if (!groups[lName].properties[pAddr]) groups[lName].properties[pAddr] = { propertyId: pId, receipts: [] }
+        groups[lName].properties[pAddr].receipts.push(inv)
+      }
+      setGrouped(groups)
+
+      // Auto-expand all landlords and properties
+      setExpandedLandlords(new Set(Object.keys(groups)))
+      const propKeys = new Set<string>()
+      Object.entries(groups).forEach(([l, { properties }]) => {
+        Object.keys(properties).forEach(p => propKeys.add(`${l}::${p}`))
+      })
+      setExpandedProperties(propKeys)
     } catch (err) {
-      console.error(err)
+      console.error('Failed to load receipts:', err)
     } finally {
       setLoading(false)
     }
   }
 
+  // ─── Load invoices for list tab ───────────────────────────────────────────
   useEffect(() => {
-    fetchInvoices()
-  }, [page, typeFilter, statusFilter, propertyFilter, landlordFilter])
+    if (activeTab === 'list') loadInvoices()
+  }, [activeTab, page, search, typeFilter, statusFilter, propertyFilter, landlordFilter])
 
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setPage(1)
-    fetchInvoices()
-  }
-
-  // Handle landlord selection in form to auto-fill recipient info
-  const handleSelectLandlordInForm = (idStr: string) => {
-    if (!idStr) {
-      setForm(prev => ({ ...prev, landlordId: '', recipientName: '', recipientEmail: '', recipientPhone: '' }))
-      return
-    }
-    const found = landlordsList.find(l => String(l.id) === idStr)
-    if (found) {
-      setForm(prev => ({
-        ...prev,
-        landlordId: idStr,
-        recipientName: found.name || '',
-        recipientEmail: found.email || '',
-        recipientPhone: found.phone || '',
-      }))
+  async function loadInvoices() {
+    setLoading(true)
+    try {
+      const filters: any = {}
+      if (search) filters.search = search
+      if (typeFilter !== 'all') filters.type = typeFilter
+      if (statusFilter !== 'all') filters.status = statusFilter
+      if (propertyFilter !== 'all') filters.propertyId = propertyFilter
+      if (landlordFilter !== 'all') filters.landlordId = landlordFilter
+      const res = await invoicesApi.list(page, limit, filters)
+      setInvoices(res.invoices || [])
+      setTotal(res.total || 0)
+    } catch (err) {
+      console.error('Failed to load invoices:', err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const handleGenerate = async (e: React.FormEvent) => {
+  // ─── Toggles ──────────────────────────────────────────────────────────────
+  function toggleLandlord(name: string) {
+    setExpandedLandlords(prev => {
+      const next = new Set(prev)
+      next.has(name) ? next.delete(name) : next.add(name)
+      return next
+    })
+  }
+  function toggleProperty(key: string) {
+    setExpandedProperties(prev => {
+      const next = new Set(prev)
+      next.has(key) ? next.delete(key) : next.add(key)
+      return next
+    })
+  }
+
+  // ─── Generate invoice ─────────────────────────────────────────────────────
+  async function handleGenerate(e: React.FormEvent) {
     e.preventDefault()
-    if (!form.recipientName.trim() || !form.amount || parseFloat(form.amount) <= 0) {
-      setStatusMsg({ type: 'error', text: 'Please fill in recipient name and a valid amount.' })
+    if (!form.recipientName || !form.amount || !form.issueDate) {
+      setStatusMsg({ type: 'error', text: 'Recipient name, amount, and issue date are required.' })
       return
     }
-
     setGenerating(true)
     setStatusMsg(null)
     try {
-      const res: any = await invoicesApi.create({
+      await invoicesApi.create({
         ...form,
         amount: parseFloat(form.amount),
         landlordId: form.landlordId ? parseInt(form.landlordId) : undefined,
         propertyId: form.propertyId ? parseInt(form.propertyId) : undefined,
       })
-
-      setStatusMsg({ type: 'success', text: res?.message || 'Invoice/Receipt generated successfully!' })
+      setStatusMsg({ type: 'success', text: `${form.type} generated successfully!` })
       setShowGenerateModal(false)
-      // Reset form
-      setForm({
-        type: 'Invoice',
-        recipientType: 'landlord',
-        recipientName: '',
-        recipientEmail: '',
-        recipientPhone: '',
-        landlordId: '',
-        propertyId: '',
-        amount: '',
-        description: '',
-        status: 'Pending',
-        issueDate: new Date().toISOString().split('T')[0],
-        dueDate: '',
-        bankName: 'Access Bank',
-        accountNumber: '0123456789',
-        accountName: 'EstatePro Management Ltd',
-        notes: 'Thank you for your business. Please make payments to the account details provided above.',
-      })
-      await fetchInvoices()
+      if (activeTab === 'list') loadInvoices()
+      if (activeTab === 'gallery') loadGallery()
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err?.message || 'Failed to generate invoice.' })
+      setStatusMsg({ type: 'error', text: err.message || 'Failed to generate.' })
     } finally {
       setGenerating(false)
     }
   }
 
-  const handleMarkAsPaid = async (id: number) => {
-    try {
-      await invoicesApi.updateStatus(id, 'Paid')
-      await fetchInvoices()
-      if (viewingInvoice && viewingInvoice.id === id) {
-        setViewingInvoice((prev: any) => ({ ...prev, status: 'Paid', paidDate: new Date().toISOString().split('T')[0] }))
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Are you sure you want to permanently delete this invoice?')) return
+  async function handleDelete(id: number) {
+    if (!confirm('Delete this record? This cannot be undone.')) return
     try {
       await invoicesApi.delete(id)
-      await fetchInvoices()
-      if (viewingInvoice && viewingInvoice.id === id) setViewingInvoice(null)
-    } catch (err) {
-      console.error(err)
+      setStatusMsg({ type: 'success', text: 'Deleted successfully.' })
+      if (activeTab === 'list') loadInvoices()
+      if (activeTab === 'gallery') loadGallery()
+    } catch {
+      setStatusMsg({ type: 'error', text: 'Failed to delete.' })
     }
   }
 
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'paid':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-            <CheckCircle2 className="w-3.5 h-3.5" /> Paid
-          </span>
-        )
-      case 'overdue':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300 border border-red-200 dark:border-red-800">
-            <AlertCircle className="w-3.5 h-3.5" /> Overdue
-          </span>
-        )
-      case 'cancelled':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            Cancelled
-          </span>
-        )
-      default: // Pending
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-            <Clock className="w-3.5 h-3.5" /> Pending
-          </span>
-        )
-    }
+  const statusColor: Record<string, string> = {
+    Paid: 'bg-green-100 text-green-800',
+    Pending: 'bg-yellow-100 text-yellow-800',
+    Overdue: 'bg-red-100 text-red-800',
+    Cancelled: 'bg-gray-100 text-gray-600',
   }
 
+  const totalReceipts = receipts.length
+  const totalReceiptAmount = receipts.reduce((s, r) => s + (r.amount || 0), 0)
+  const landlordCount = Object.keys(grouped).length
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2.5">
-            <FileText className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-            Invoices & Receipts
-          </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Generate, issue, and manage official invoices and payment receipts for landlords, agents, and staff.
-          </p>
+          <h1 className="text-2xl font-bold text-gray-900">Invoices &amp; Receipts</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage invoices and view landlord receipt images</p>
         </div>
-
         {isSuperAdminOrAdmin && (
           <button
             onClick={() => setShowGenerateModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
-            <Plus className="w-4 h-4" /> Generate Invoice / Receipt
+            <Plus className="w-4 h-4" /> Generate Invoice
           </button>
         )}
       </div>
 
       {statusMsg && (
-        <div className={`p-4 rounded-xl text-xs font-medium flex items-center justify-between ${
-          statusMsg.type === 'success'
-            ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-            : 'bg-red-50 text-red-800 dark:bg-red-950/60 dark:text-red-300 border border-red-200 dark:border-red-800'
-        }`}>
-          <span>{statusMsg.text}</span>
-          <button onClick={() => setStatusMsg(null)}><X className="w-4 h-4" /></button>
+        <div className={`flex items-center gap-3 p-4 rounded-lg text-sm ${statusMsg.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+          {statusMsg.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+          {statusMsg.text}
+          <button onClick={() => setStatusMsg(null)} className="ml-auto"><X className="w-4 h-4" /></button>
         </div>
       )}
 
-      {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs">
-          <span className="text-xs text-gray-400">Total Value Issued</span>
-          <p className="text-xl font-bold text-gray-900 dark:text-white mt-1">{formatCurrency(totalAmount)}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">{total} total documents</p>
+      {/* Stats */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+          <div className="p-3 bg-blue-50 rounded-lg"><ImageIcon className="w-5 h-5 text-blue-600" /></div>
+          <div><p className="text-xs text-gray-500">Total Receipts</p><p className="text-xl font-bold text-gray-900">{totalReceipts}</p></div>
         </div>
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs">
-          <span className="text-xs text-gray-400">Total Collected / Paid</span>
-          <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400 mt-1">{formatCurrency(paidAmount)}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">Verified settlements</p>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+          <div className="p-3 bg-green-50 rounded-lg"><DollarSign className="w-5 h-5 text-green-600" /></div>
+          <div><p className="text-xs text-gray-500">Total Amount</p><p className="text-xl font-bold text-gray-900">{formatCurrency(totalReceiptAmount)}</p></div>
         </div>
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs">
-          <span className="text-xs text-gray-400">Total Pending Settlement</span>
-          <p className="text-xl font-bold text-amber-600 dark:text-amber-400 mt-1">{formatCurrency(pendingAmount)}</p>
-          <p className="text-[10px] text-gray-400 mt-0.5">Awaiting payment</p>
-        </div>
-        <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs">
-          <span className="text-xs text-gray-400">Document Breakdown</span>
-          <div className="flex items-center gap-3 mt-1.5">
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300">
-              Invoices
-            </span>
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-              Receipts
-            </span>
-          </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
+          <div className="p-3 bg-purple-50 rounded-lg"><Users className="w-5 h-5 text-purple-600" /></div>
+          <div><p className="text-xs text-gray-500">Landlords</p><p className="text-xl font-bold text-gray-900">{landlordCount}</p></div>
         </div>
       </div>
 
-      {/* Filter Bar with Property and Landlord Selectors */}
-      <div className="bg-white dark:bg-gray-900 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs space-y-3">
-        <div className="flex flex-col lg:flex-row gap-3">
-          {/* Search */}
-          <form onSubmit={handleSearchSubmit} className="flex-1 flex gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by invoice #, recipient, description..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold transition"
-            >
-              Search
-            </button>
-          </form>
-
-          {/* Quick Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Type */}
-            <select
-              value={typeFilter}
-              onChange={(e) => { setTypeFilter(e.target.value); setPage(1) }}
-              className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="all">All Types</option>
-              <option value="Invoice">Invoices</option>
-              <option value="Receipt">Receipts</option>
-            </select>
-
-            {/* Status */}
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
-              className="text-xs px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="all">All Statuses</option>
-              <option value="Pending">Pending</option>
-              <option value="Paid">Paid</option>
-              <option value="Overdue">Overdue</option>
-              <option value="Cancelled">Cancelled</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Property and Landlord Dedicated Filter Row */}
-        <div className="pt-2 border-t border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row gap-3 items-center">
-          <div className="flex items-center gap-2 w-full sm:w-1/2">
-            <Building2 className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-            <span className="text-xs text-gray-500 shrink-0">Filter Property:</span>
-            <select
-              value={propertyFilter}
-              onChange={(e) => { setPropertyFilter(e.target.value); setPage(1) }}
-              className="w-full text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="all">All Properties ({propertiesList.length})</option>
-              {propertiesList.map(p => (
-                <option key={p.id} value={p.id}>
-                  #{p.id} - {p.name || p.address}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-1/2">
-            <Users className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-            <span className="text-xs text-gray-500 shrink-0">Filter Landlord:</span>
-            <select
-              value={landlordFilter}
-              onChange={(e) => { setLandlordFilter(e.target.value); setPage(1) }}
-              className="w-full text-xs px-3 py-1.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-            >
-              <option value="all">All Landlords ({landlordsList.length})</option>
-              {landlordsList.map(l => (
-                <option key={l.id} value={l.id}>
-                  #{l.id} - {l.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit">
+        <button
+          onClick={() => setActiveTab('gallery')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'gallery' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          <span className="flex items-center gap-2"><ImageIcon className="w-4 h-4" /> Receipt Gallery</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('list')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'list' ? 'bg-white shadow text-blue-600' : 'text-gray-600 hover:text-gray-900'}`}
+        >
+          <span className="flex items-center gap-2"><FileText className="w-4 h-4" /> All Invoices</span>
+        </button>
       </div>
 
-      {/* Invoices Table */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-xs overflow-hidden">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-            <p className="text-xs text-gray-400">Loading invoices & receipts...</p>
-          </div>
-        ) : invoices.length === 0 ? (
-          <div className="text-center py-20 px-4">
-            <FileText className="w-10 h-10 text-gray-300 dark:text-gray-700 mx-auto mb-3" />
-            <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">No invoices or receipts found</h3>
-            <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
-              {isSuperAdminOrAdmin
-                ? 'Generate an invoice or receipt using the button above to begin.'
-                : 'No financial documents have been issued to your account yet.'}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-gray-50 dark:bg-gray-800/80 text-gray-500 uppercase tracking-wider font-semibold border-b border-gray-100 dark:border-gray-800">
-                <tr>
-                  <th className="px-4 py-3">Doc #</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Recipient</th>
-                  <th className="px-4 py-3">Property</th>
-                  <th className="px-4 py-3">Issue Date</th>
-                  <th className="px-4 py-3 text-right">Amount</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {invoices.map((inv) => (
-                  <tr key={inv.id} className="hover:bg-gray-50/70 dark:hover:bg-gray-800/50 transition">
-                    <td className="px-4 py-3 font-mono font-bold text-gray-900 dark:text-white">
-                      {inv.invoiceNo}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        inv.type === 'Receipt'
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                          : 'bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
-                      }`}>
-                        {inv.type}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-semibold text-gray-900 dark:text-white">{inv.recipientName}</p>
-                      <p className="text-[10px] text-gray-400 capitalize">{inv.recipientType}</p>
-                    </td>
-                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300 max-w-[150px] truncate">
-                      {inv.property?.name || inv.property?.address || (inv.landlord?.name ? `Landlord: ${inv.landlord.name}` : 'General')}
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">
-                      {formatDate(inv.issueDate)}
-                    </td>
-                    <td className="px-4 py-3 text-right font-black text-gray-900 dark:text-white">
-                      {formatCurrency(inv.amount)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {getStatusBadge(inv.status)}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => setViewingInvoice(inv)}
-                          className="px-2.5 py-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 rounded-lg transition inline-flex items-center gap-1"
-                          title="View & Print"
-                        >
-                          <Eye className="w-3 h-3" /> View / Print
-                        </button>
-
-                        {isSuperAdminOrAdmin && inv.status === 'Pending' && (
-                          <button
-                            onClick={() => handleMarkAsPaid(inv.id)}
-                            className="px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:text-emerald-300 rounded-lg transition"
-                            title="Mark as Paid"
-                          >
-                            Mark Paid
-                          </button>
-                        )}
-
-                        {role === 'super_admin' && (
-                          <button
-                            onClick={() => handleDelete(inv.id)}
-                            className="p-1 text-gray-400 hover:text-red-600 rounded-lg"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination */}
-        {total > limit && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100 dark:border-gray-800">
-            <p className="text-xs text-gray-500">
-              Showing {((page - 1) * limit) + 1}–{Math.min(page * limit, total)} of {total} documents
-            </p>
-            <div className="flex gap-2">
-              <button
-                disabled={page === 1}
-                onClick={() => setPage(p => p - 1)}
-                className="px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                ← Previous
-              </button>
-              <button
-                disabled={page * limit >= total}
-                onClick={() => setPage(p => p + 1)}
-                className="px-3 py-1.5 text-xs font-medium border border-gray-200 dark:border-gray-700 rounded-lg disabled:opacity-40 hover:bg-gray-50 dark:hover:bg-gray-800"
-              >
-                Next →
-              </button>
+      {/* ── GALLERY TAB ── */}
+      {activeTab === 'gallery' && (
+        <div className="space-y-4">
+          {loading ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+              <span className="ml-3 text-gray-500">Loading receipt images...</span>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Generate Invoice Modal */}
-      {showGenerateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 w-full max-w-2xl shadow-2xl space-y-5 my-8">
-            <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3">
-              <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-200 dark:border-blue-800">
-                  <FileText className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 dark:text-white">
-                    Generate {form.type}
-                  </h3>
-                  <p className="text-xs text-gray-500">Create an official invoice or receipt for stakeholders</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowGenerateModal(false)}
-                className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
+          ) : Object.keys(grouped).length === 0 ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-16 text-center">
+              <ImageIcon className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 mb-2">No receipt images yet</h3>
+              <p className="text-gray-500 text-sm">Run the import script to load landlord receipts.</p>
             </div>
-
-            <form onSubmit={handleGenerate} className="space-y-4 text-xs">
-              {/* Document Type Selector */}
-              <div className="grid grid-cols-2 gap-3">
+          ) : (
+            Object.entries(grouped).map(([landlordName, { landlordId, properties }]) => (
+              <div key={landlordName} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                {/* Landlord Header */}
                 <button
-                  type="button"
-                  onClick={() => setForm({ ...form, type: 'Invoice', status: 'Pending' })}
-                  className={`p-3 rounded-xl border text-center font-bold transition ${
-                    form.type === 'Invoice'
-                      ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 ring-1 ring-blue-600'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
-                  }`}
+                  onClick={() => toggleLandlord(landlordName)}
+                  className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
                 >
-                  <p className="text-sm">Invoice</p>
-                  <p className="text-[10px] font-normal opacity-80 mt-0.5">Request for payment</p>
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-blue-50 rounded-lg">
+                      <Users className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="text-left">
+                      <h2 className="font-semibold text-gray-900">{landlordName}</h2>
+                      <p className="text-xs text-gray-500">
+                        {Object.keys(properties).length} {Object.keys(properties).length === 1 ? 'property' : 'properties'} •{' '}
+                        {Object.values(properties).reduce((s, p) => s + p.receipts.length, 0)} receipts •{' '}
+                        {formatCurrency(Object.values(properties).reduce((s, p) => s + p.receipts.reduce((rs, r) => rs + (r.amount || 0), 0), 0))}
+                      </p>
+                    </div>
+                  </div>
+                  {expandedLandlords.has(landlordName)
+                    ? <ChevronDown className="w-5 h-5 text-gray-400" />
+                    : <ChevronRight className="w-5 h-5 text-gray-400" />}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setForm({ ...form, type: 'Receipt', status: 'Paid' })}
-                  className={`p-3 rounded-xl border text-center font-bold transition ${
-                    form.type === 'Receipt'
-                      ? 'border-emerald-600 bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 ring-1 ring-emerald-600'
-                      : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
-                  }`}
-                >
-                  <p className="text-sm">Receipt</p>
-                  <p className="text-[10px] font-normal opacity-80 mt-0.5">Proof of payment received</p>
-                </button>
+
+                {/* Properties */}
+                {expandedLandlords.has(landlordName) && (
+                  <div className="border-t border-gray-100 divide-y divide-gray-100">
+                    {Object.entries(properties).map(([propAddress, { propertyId, receipts: propReceipts }]) => {
+                      const key = `${landlordName}::${propAddress}`
+                      const propTotal = propReceipts.reduce((s, r) => s + (r.amount || 0), 0)
+                      return (
+                        <div key={propAddress}>
+                          {/* Property sub-header */}
+                          <button
+                            onClick={() => toggleProperty(key)}
+                            className="w-full flex items-center justify-between px-6 py-3 hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className="p-1.5 bg-green-50 rounded-md">
+                                <Home className="w-4 h-4 text-green-600" />
+                              </div>
+                              <div className="text-left">
+                                <p className="font-medium text-gray-800 text-sm">{propAddress}</p>
+                                <p className="text-xs text-gray-500">
+                                  {propReceipts.length} receipts • {formatCurrency(propTotal)}
+                                </p>
+                              </div>
+                            </div>
+                            {expandedProperties.has(key)
+                              ? <ChevronDown className="w-4 h-4 text-gray-400" />
+                              : <ChevronRight className="w-4 h-4 text-gray-400" />}
+                          </button>
+
+                          {/* Receipt Image Grid */}
+                          {expandedProperties.has(key) && (
+                            <div className="px-6 pb-5 pt-2">
+                              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                                {propReceipts.map(receipt => (
+                                  <div
+                                    key={receipt.id}
+                                    className="group relative bg-gray-50 rounded-lg border border-gray-200 overflow-hidden hover:border-blue-400 hover:shadow-md transition-all cursor-pointer"
+                                    onClick={() => receipt.imageUrl && setLightboxImage({ url: receipt.imageUrl, invoice: receipt })}
+                                  >
+                                    {/* Receipt image thumbnail */}
+                                    {receipt.imageUrl ? (
+                                      <div className="relative aspect-[3/4] overflow-hidden bg-gray-100">
+                                        <img
+                                          src={receipt.imageUrl}
+                                          alt={`Receipt ${receipt.invoiceNo}`}
+                                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                          onError={e => {
+                                            const target = e.target as HTMLImageElement
+                                            target.style.display = 'none'
+                                            target.nextElementSibling?.classList.remove('hidden')
+                                          }}
+                                        />
+                                        {/* Fallback if image fails */}
+                                        <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-100">
+                                          <Receipt className="w-8 h-8 text-gray-300" />
+                                        </div>
+                                        {/* Hover overlay */}
+                                        <div className="absolute inset-0 bg-blue-600/0 group-hover:bg-blue-600/10 transition-colors flex items-center justify-center">
+                                          <ZoomIn className="w-6 h-6 text-white opacity-0 group-hover:opacity-100 transition-opacity drop-shadow-lg" />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="aspect-[3/4] flex items-center justify-center bg-gray-100">
+                                        <Receipt className="w-8 h-8 text-gray-300" />
+                                      </div>
+                                    )}
+
+                                    {/* Receipt info below image */}
+                                    <div className="p-2">
+                                      <p className="text-xs font-semibold text-gray-700 truncate">{receipt.invoiceNo}</p>
+                                      <p className="text-xs text-green-700 font-medium">{formatCurrency(receipt.amount)}</p>
+                                      <p className="text-xs text-gray-400">{receipt.issueDate}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
+            ))
+          )}
+        </div>
+      )}
 
-              {/* Recipient Role Selection */}
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { id: 'landlord', label: 'Landlord' },
-                  { id: 'agent', label: 'Agent' },
-                  { id: 'admin', label: 'Staff / Admin' },
-                ].map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => setForm({ ...form, recipientType: r.id })}
-                    className={`py-2 px-3 rounded-xl border font-semibold text-center transition ${
-                      form.recipientType === r.id
-                        ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
-                        : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400'
-                    }`}
-                  >
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Link Landlord (if landlord) */}
-              {form.recipientType === 'landlord' && (
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Select Landlord (Auto-fills details)
-                  </label>
-                  <select
-                    value={form.landlordId}
-                    onChange={(e) => handleSelectLandlordInForm(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  >
-                    <option value="">-- Choose registered landlord or type custom below --</option>
-                    {landlordsList.map(l => (
-                      <option key={l.id} value={l.id}>
-                        #{l.id} - {l.name} ({l.phone || 'No phone'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-
-              {/* Recipient Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Recipient Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={form.recipientName}
-                    onChange={(e) => setForm({ ...form, recipientName: e.target.value })}
-                    placeholder="e.g. Chief Adebayo"
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Recipient Email
-                  </label>
-                  <input
-                    type="email"
-                    value={form.recipientEmail}
-                    onChange={(e) => setForm({ ...form, recipientEmail: e.target.value })}
-                    placeholder="email@example.com"
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Recipient Phone
-                  </label>
-                  <input
-                    type="text"
-                    value={form.recipientPhone}
-                    onChange={(e) => setForm({ ...form, recipientPhone: e.target.value })}
-                    placeholder="08012345678"
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  />
-                </div>
-              </div>
-
-              {/* Link Property & Amount */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Related Property (Optional)
-                  </label>
-                  <select
-                    value={form.propertyId}
-                    onChange={(e) => setForm({ ...form, propertyId: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  >
-                    <option value="">-- No specific property / General --</option>
-                    {propertiesList.map(p => (
-                      <option key={p.id} value={p.id}>
-                        #{p.id} - {p.name || p.address}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Amount (₦) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={form.amount}
-                    onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    placeholder="e.g. 250000"
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white font-bold"
-                  />
-                </div>
-              </div>
-
-              {/* Description */}
-              <div>
-                <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Description / Purpose of Payment *
-                </label>
+      {/* ── LIST TAB ── */}
+      {activeTab === 'list' && (
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex flex-wrap gap-3">
+              <div className="relative flex-1 min-w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                 <input
-                  type="text"
-                  required
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="e.g. Property Management Fee (Q4 2026) or Legal Documentation Charge"
-                  className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
+                  value={search} onChange={e => { setSearch(e.target.value); setPage(1) }}
+                  placeholder="Search by name or invoice no..."
+                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              {(['type', 'status', 'landlord', 'property'] as const).map(filterKey => (
+                <select
+                  key={filterKey}
+                  value={filterKey === 'type' ? typeFilter : filterKey === 'status' ? statusFilter : filterKey === 'landlord' ? landlordFilter : propertyFilter}
+                  onChange={e => {
+                    setPage(1)
+                    if (filterKey === 'type') setTypeFilter(e.target.value)
+                    else if (filterKey === 'status') setStatusFilter(e.target.value)
+                    else if (filterKey === 'landlord') setLandlordFilter(e.target.value)
+                    else setPropertyFilter(e.target.value)
+                  }}
+                  className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  {filterKey === 'type' && (<><option value="all">All Types</option><option value="Invoice">Invoices</option><option value="Receipt">Receipts</option></>)}
+                  {filterKey === 'status' && (<><option value="all">All Status</option><option value="Paid">Paid</option><option value="Pending">Pending</option><option value="Overdue">Overdue</option></>)}
+                  {filterKey === 'landlord' && (<><option value="all">All Landlords</option>{landlordsList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</>)}
+                  {filterKey === 'property' && (<><option value="all">All Properties</option>{propertiesList.map(p => <option key={p.id} value={p.id}>{p.address}</option>)}</>)}
+                </select>
+              ))}
+            </div>
+          </div>
 
-              {/* Dates & Status */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Table */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="w-6 h-6 animate-spin text-blue-600 mr-2" />
+                <span className="text-gray-500 text-sm">Loading...</span>
+              </div>
+            ) : invoices.length === 0 ? (
+              <div className="text-center py-16 text-gray-500 text-sm">No records found.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      {['Invoice No', 'Type', 'Recipient', 'Property', 'Amount', 'Status', 'Date', 'Image', 'Actions'].map(h => (
+                        <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {invoices.map(inv => (
+                      <tr key={inv.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-3 font-medium text-gray-900">{inv.invoiceNo}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${inv.type === 'Receipt' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'}`}>
+                            {inv.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 max-w-32 truncate">{inv.recipientName}</td>
+                        <td className="px-4 py-3 text-gray-500 text-xs max-w-32 truncate">{inv.property?.address || '—'}</td>
+                        <td className="px-4 py-3 font-medium text-gray-900">{formatCurrency(inv.amount)}</td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColor[inv.status] || 'bg-gray-100 text-gray-600'}`}>
+                            {inv.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 text-xs">{inv.issueDate}</td>
+                        <td className="px-4 py-3">
+                          {inv.imageUrl ? (
+                            <button onClick={() => setLightboxImage({ url: inv.imageUrl!, invoice: inv })} className="text-blue-600 hover:text-blue-800">
+                              <ImageIcon className="w-4 h-4" />
+                            </button>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setViewingInvoice(inv)} className="p-1 hover:bg-gray-100 rounded text-gray-500 hover:text-blue-600" title="View details">
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            {isSuperAdminOrAdmin && (
+                              <button onClick={() => handleDelete(inv.id)} className="p-1 hover:bg-red-50 rounded text-gray-400 hover:text-red-600" title="Delete">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination */}
+            {total > limit && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+                <span className="text-sm text-gray-500">Showing {(page - 1) * limit + 1}–{Math.min(page * limit, total)} of {total}</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+                    className="px-3 py-1 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Previous</button>
+                  <button onClick={() => setPage(p => p + 1)} disabled={page * limit >= total}
+                    className="px-3 py-1 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50">Next</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── LIGHTBOX (full-size image viewer) ── */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div className="relative max-w-4xl w-full" onClick={e => e.stopPropagation()}>
+            {/* Close */}
+            <button
+              onClick={() => setLightboxImage(null)}
+              className="absolute -top-10 right-0 text-white/80 hover:text-white"
+            >
+              <X className="w-7 h-7" />
+            </button>
+
+            {/* Image */}
+            <img
+              src={lightboxImage.url}
+              alt={`Receipt ${lightboxImage.invoice.invoiceNo}`}
+              className="w-full max-h-[80vh] object-contain rounded-lg shadow-2xl"
+            />
+
+            {/* Info bar below image */}
+            <div className="mt-3 bg-white/10 backdrop-blur rounded-lg p-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-4 text-white text-sm">
+                <span className="font-semibold">{lightboxImage.invoice.invoiceNo}</span>
+                <span>•</span>
+                <span>{lightboxImage.invoice.landlord?.name || lightboxImage.invoice.recipientName}</span>
+                <span>•</span>
+                <span>{lightboxImage.invoice.property?.address}</span>
+                <span>•</span>
+                <span className="text-green-400 font-medium">{formatCurrency(lightboxImage.invoice.amount)}</span>
+                {lightboxImage.invoice.issueDate && <><span>•</span><span>{lightboxImage.invoice.issueDate}</span></>}
+              </div>
+              <a
+                href={lightboxImage.url}
+                download
+                onClick={e => e.stopPropagation()}
+                className="flex items-center gap-2 bg-white/20 hover:bg-white/30 text-white text-sm px-3 py-1.5 rounded-lg transition-colors"
+              >
+                <Download className="w-4 h-4" /> Download
+              </a>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── INVOICE DETAIL MODAL ── */}
+      {viewingInvoice && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setViewingInvoice(null)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-lg font-bold text-gray-900">{viewingInvoice.invoiceNo}</h2>
+              <button onClick={() => setViewingInvoice(null)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <div className="space-y-3 text-sm">
+              {[
+                ['Type', viewingInvoice.type],
+                ['Recipient', viewingInvoice.recipientName],
+                ['Property', viewingInvoice.property?.address || '—'],
+                ['Amount', formatCurrency(viewingInvoice.amount)],
+                ['Status', viewingInvoice.status],
+                ['Issue Date', viewingInvoice.issueDate],
+                ['Paid Date', viewingInvoice.paidDate || '—'],
+                ['Description', viewingInvoice.description || '—'],
+                ['Notes', viewingInvoice.notes || '—'],
+              ].map(([label, value]) => (
+                <div key={label} className="flex justify-between gap-4">
+                  <span className="text-gray-500 shrink-0">{label}</span>
+                  <span className="text-gray-900 text-right">{value}</span>
+                </div>
+              ))}
+            </div>
+            {viewingInvoice.imageUrl && (
+              <div className="mt-4">
+                <img src={viewingInvoice.imageUrl} alt="Receipt" className="w-full rounded-lg border border-gray-200 cursor-pointer"
+                  onClick={() => { setViewingInvoice(null); setLightboxImage({ url: viewingInvoice.imageUrl!, invoice: viewingInvoice }) }} />
+                <p className="text-xs text-center text-gray-400 mt-1">Click image to enlarge</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── GENERATE INVOICE MODAL ── */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => setShowGenerateModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between rounded-t-2xl">
+              <h2 className="text-lg font-bold text-gray-900">Generate Invoice / Receipt</h2>
+              <button onClick={() => setShowGenerateModal(false)}><X className="w-5 h-5 text-gray-400" /></button>
+            </div>
+            <form onSubmit={handleGenerate} className="p-6 space-y-4">
+              {statusMsg && (
+                <div className={`p-3 rounded-lg text-sm ${statusMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                  {statusMsg.text}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Issue Date
-                  </label>
-                  <input
-                    type="date"
-                    value={form.issueDate}
-                    onChange={(e) => setForm({ ...form, issueDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  />
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+                  <select value={form.type} onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option>Invoice</option><option>Receipt</option>
+                  </select>
                 </div>
                 <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Due Date (for Invoices)
-                  </label>
-                  <input
-                    type="date"
-                    value={form.dueDate}
-                    onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                    Status
-                  </label>
-                  <select
-                    value={form.status}
-                    onChange={(e) => setForm({ ...form, status: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-white font-semibold"
-                  >
-                    <option value="Pending">Pending</option>
-                    <option value="Paid">Paid</option>
-                    <option value="Overdue">Overdue</option>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Recipient Type</label>
+                  <select value={form.recipientType} onChange={e => setForm(f => ({ ...f, recipientType: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option value="landlord">Landlord</option><option value="agent">Agent</option><option value="admin">Admin</option>
                   </select>
                 </div>
               </div>
-
-              {/* Settlement Bank Details */}
-              <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 space-y-2">
-                <p className="font-bold text-gray-800 dark:text-gray-200">Company Remittance Details</p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <input
-                    type="text"
-                    value={form.bankName}
-                    onChange={(e) => setForm({ ...form, bankName: e.target.value })}
-                    placeholder="Bank Name"
-                    className="px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                  />
-                  <input
-                    type="text"
-                    value={form.accountNumber}
-                    onChange={(e) => setForm({ ...form, accountNumber: e.target.value })}
-                    placeholder="Account Number"
-                    className="px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                  />
-                  <input
-                    type="text"
-                    value={form.accountName}
-                    onChange={(e) => setForm({ ...form, accountName: e.target.value })}
-                    placeholder="Account Name"
-                    className="px-2.5 py-1.5 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
-                  />
+              {(['recipientName', 'recipientEmail', 'recipientPhone'] as const).map(field => (
+                <div key={field}>
+                  <label className="block text-xs font-medium text-gray-700 mb-1 capitalize">{field.replace(/([A-Z])/g, ' $1')}</label>
+                  <input value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              ))}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Landlord</label>
+                  <select value={form.landlordId} onChange={e => setForm(f => ({ ...f, landlordId: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option value="">Select...</option>
+                    {landlordsList.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Property</label>
+                  <select value={form.propertyId} onChange={e => setForm(f => ({ ...f, propertyId: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option value="">Select...</option>
+                    {propertiesList.map(p => <option key={p.id} value={p.id}>{p.address}</option>)}
+                  </select>
                 </div>
               </div>
-
-              {/* Actions */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100 dark:border-gray-800">
-                <button
-                  type="button"
-                  onClick={() => setShowGenerateModal(false)}
-                  className="px-4 py-2 font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={generating}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold shadow-xs disabled:opacity-50 transition"
-                >
-                  {generating ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" /> Generating...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="w-3.5 h-3.5" /> Generate & Dispatch
-                    </>
-                  )}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Amount (₦) *</label>
+                  <input type="number" value={form.amount} onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Status</label>
+                  <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <option>Pending</option><option>Paid</option><option>Overdue</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Issue Date *</label>
+                  <input type="date" value={form.issueDate} onChange={e => setForm(f => ({ ...f, issueDate: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Due Date</label>
+                  <input type="date" value={form.dueDate} onChange={e => setForm(f => ({ ...f, dueDate: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Description</label>
+                <textarea rows={2} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setShowGenerateModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50">Cancel</button>
+                <button type="submit" disabled={generating}
+                  className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2">
+                  {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Generating...</> : `Generate ${form.type}`}
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* View & Print Printable Document Modal */}
-      {viewingInvoice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
-          <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 p-6 sm:p-8 w-full max-w-2xl shadow-2xl space-y-6 my-8 print:p-0 print:border-none print:shadow-none">
-            {/* Modal Controls (Hidden when printing) */}
-            <div className="flex items-center justify-between border-b border-gray-100 dark:border-gray-800 pb-3 print:hidden">
-              <span className="text-xs text-gray-400 font-mono">ID #{viewingInvoice.id}</span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-xs transition"
-                >
-                  <Printer className="w-3.5 h-3.5" /> Print / Save PDF
-                </button>
-                <button
-                  onClick={() => setViewingInvoice(null)}
-                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Printable Document Sheet */}
-            <div className="space-y-6 text-gray-900 dark:text-white print:text-black">
-              {/* Top Banner: Logo & Title */}
-              <div className="flex justify-between items-start border-b border-gray-200 dark:border-gray-800 pb-4">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white font-black text-sm">
-                      EP
-                    </div>
-                    <div>
-                      <h2 className="text-lg font-black tracking-tight leading-tight">EstatePro</h2>
-                      <p className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Management Ltd</p>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-gray-500 mt-2 max-w-xs">
-                    Victoria Island &bull; Lagos &bull; Abuja &bull; Enugu, Nigeria
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <h1 className={`text-2xl font-black uppercase tracking-wider ${
-                    viewingInvoice.type === 'Receipt' ? 'text-emerald-600' : 'text-blue-600'
-                  }`}>
-                    {viewingInvoice.type}
-                  </h1>
-                  <p className="font-mono text-xs font-bold mt-1 text-gray-700 dark:text-gray-300">
-                    {viewingInvoice.invoiceNo}
-                  </p>
-                  <div className="mt-1.5">{getStatusBadge(viewingInvoice.status)}</div>
-                </div>
-              </div>
-
-              {/* Billed To & Dates */}
-              <div className="grid grid-cols-2 gap-4 text-xs">
-                <div>
-                  <p className="font-bold text-gray-400 uppercase tracking-wider text-[10px]">Recipient</p>
-                  <p className="font-bold text-sm text-gray-900 dark:text-white mt-1">{viewingInvoice.recipientName}</p>
-                  {viewingInvoice.recipientEmail && <p className="text-gray-500">{viewingInvoice.recipientEmail}</p>}
-                  {viewingInvoice.recipientPhone && <p className="text-gray-500">{viewingInvoice.recipientPhone}</p>}
-                  <p className="text-gray-400 text-[10px] capitalize mt-0.5">Role: {viewingInvoice.recipientType}</p>
-                </div>
-
-                <div className="text-right space-y-1 text-gray-600 dark:text-gray-300">
-                  <p><strong>Issue Date:</strong> {formatDate(viewingInvoice.issueDate)}</p>
-                  {viewingInvoice.dueDate && <p><strong>Due Date:</strong> {formatDate(viewingInvoice.dueDate)}</p>}
-                  {viewingInvoice.paidDate && (
-                    <p className="text-emerald-600 font-semibold">
-                      <strong>Settled On:</strong> {formatDate(viewingInvoice.paidDate)}
-                    </p>
-                  )}
-                  {viewingInvoice.property && (
-                    <p><strong>Property:</strong> {viewingInvoice.property.name || viewingInvoice.property.address}</p>
-                  )}
-                </div>
-              </div>
-
-              {/* Line Items Table */}
-              <div className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-bold uppercase text-[10px]">
-                    <tr>
-                      <th className="px-4 py-2.5">Item Description</th>
-                      <th className="px-4 py-2.5 text-right">Amount (NGN)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    <tr>
-                      <td className="px-4 py-3 font-medium text-gray-800 dark:text-gray-200">
-                        {viewingInvoice.description || 'Property management fee and administrative services'}
-                      </td>
-                      <td className="px-4 py-3 text-right font-black text-sm">
-                        {formatCurrency(viewingInvoice.amount)}
-                      </td>
-                    </tr>
-                  </tbody>
-                  <tfoot className="bg-gray-50 dark:bg-gray-800 font-bold border-t border-gray-200 dark:border-gray-700">
-                    <tr>
-                      <td className="px-4 py-2.5 text-right uppercase text-[10px] text-gray-500">Total Amount</td>
-                      <td className="px-4 py-2.5 text-right text-base font-black text-gray-900 dark:text-white">
-                        {formatCurrency(viewingInvoice.amount)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* Remittance Bank Info */}
-              <div className="p-4 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-800 text-xs">
-                <p className="font-bold text-gray-700 dark:text-gray-300 uppercase text-[10px] tracking-wider mb-1">
-                  Payment Instructions
-                </p>
-                <div className="grid grid-cols-3 gap-2 text-gray-600 dark:text-gray-400 text-[11px]">
-                  <div>Bank: <strong className="text-gray-900 dark:text-white">{viewingInvoice.bankName || 'Access Bank'}</strong></div>
-                  <div>Account #: <strong className="text-gray-900 dark:text-white font-mono">{viewingInvoice.accountNumber || '0123456789'}</strong></div>
-                  <div>Name: <strong className="text-gray-900 dark:text-white">{viewingInvoice.accountName || 'EstatePro Ltd'}</strong></div>
-                </div>
-                {viewingInvoice.notes && (
-                  <p className="text-gray-500 text-[11px] mt-2 italic border-t border-gray-200/60 dark:border-gray-700 pt-1.5">
-                    {viewingInvoice.notes}
-                  </p>
-                )}
-              </div>
-
-              {/* Footer */}
-              <div className="pt-4 border-t border-gray-100 dark:border-gray-800 text-center text-[10px] text-gray-400">
-                This is a computer-generated official {viewingInvoice.type.toLowerCase()} by EstatePro Management System. Valid without signature.
-              </div>
-            </div>
           </div>
         </div>
       )}

@@ -377,6 +377,7 @@ model Invoice {
   accountNumber  String?
   accountName    String?
   notes          String?
+  imageUrl       String?   // URL path to the receipt image file (for visual display)
   createdById    Int
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
