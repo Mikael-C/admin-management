@@ -17,9 +17,10 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-context'
 import { formatDate } from '@/lib/utils'
+import Link from 'next/link'
 
 export default function UsersPage() {
-  const { user, loginAs, switchLandlord, switchAgent } = useAuth()
+  const { user } = useAuth()
   const [users, setUsers] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -41,11 +42,9 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/users')
-      if (res.ok) {
-        const json = await res.json()
-        setUsers(json.users || [])
-      }
+      const { usersApi } = await import('@/lib/api-client')
+      const json = await usersApi.list(roleFilter !== 'all' ? { role: roleFilter, search } : { search })
+      setUsers(json.users || [])
     } catch (e) {
       console.error(e)
     } finally {
@@ -55,7 +54,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers()
-  }, [])
+  }, [roleFilter])
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -273,20 +272,20 @@ export default function UsersPage() {
 
                       <td className="px-4 py-3 text-right">
                         {u.role === 'landlord' && (
-                          <button
-                            onClick={() => switchLandlord(u.landlordId || 1, u.name)}
+                          <Link
+                            href="/landlord"
                             className="px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 rounded-lg border border-emerald-200 dark:border-emerald-800 inline-flex items-center gap-1"
                           >
                             Open Portal <ArrowRight className="w-3 h-3" />
-                          </button>
+                          </Link>
                         )}
                         {u.role === 'agent' && (
-                          <button
-                            onClick={() => switchAgent(u.agentId || 1, u.name)}
+                          <Link
+                            href="/agent"
                             className="px-2.5 py-1 text-xs font-semibold text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/40 hover:bg-purple-100 rounded-lg border border-purple-200 dark:border-purple-800 inline-flex items-center gap-1"
                           >
                             Open Portal <ArrowRight className="w-3 h-3" />
-                          </button>
+                          </Link>
                         )}
                         {u.role === 'admin' && (
                           <span className="text-[11px] text-blue-600 dark:text-blue-400 font-medium">
@@ -413,3 +412,4 @@ export default function UsersPage() {
     </div>
   )
 }
+

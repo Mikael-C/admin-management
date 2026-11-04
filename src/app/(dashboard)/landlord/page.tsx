@@ -23,8 +23,9 @@ import {
 import Link from 'next/link'
 
 export default function LandlordDashboardPage() {
-  const { user, switchLandlord } = useAuth()
-  const activeLandlordId = user.landlordId || 1
+  const { user } = useAuth()
+  // Use the landlordId from the authenticated JWT user - no switcher
+  const landlordId = user?.landlordId
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<any>(null)
@@ -36,14 +37,13 @@ export default function LandlordDashboardPage() {
   const [rentSearch, setRentSearch] = useState('')
   const [expenseSearch, setExpenseSearch] = useState('')
 
-  const fetchLandlordData = async (id: number) => {
+  const fetchLandlordData = async () => {
+    if (!landlordId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/landlord/stats?landlordId=${id}`)
-      if (res.ok) {
-        const json = await res.json()
-        setData(json)
-      }
+      const { landlordsApi } = await import('@/lib/api-client')
+      const json = await landlordsApi.stats(landlordId)
+      setData(json)
     } catch (err) {
       console.error(err)
     } finally {
@@ -52,8 +52,8 @@ export default function LandlordDashboardPage() {
   }
 
   useEffect(() => {
-    fetchLandlordData(activeLandlordId)
-  }, [activeLandlordId])
+    fetchLandlordData()
+  }, [landlordId])
 
   if (loading) {
     return (
@@ -69,7 +69,7 @@ export default function LandlordDashboardPage() {
       <div className="text-center py-20 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800">
         <p className="text-gray-500">Could not retrieve landlord records.</p>
         <button
-          onClick={() => fetchLandlordData(activeLandlordId)}
+          onClick={() => fetchLandlordData()}
           className="mt-3 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700"
         >
           Try Again
@@ -129,21 +129,20 @@ export default function LandlordDashboardPage() {
             </p>
           </div>
         </div>
-
-        {/* Landlord Switcher for Testing */}
-        <div className="flex items-center gap-2 bg-black/30 p-1.5 rounded-xl border border-white/10 text-xs">
-          <span className="text-white/60 pl-2">Viewing as:</span>
-          <select
-            value={activeLandlordId}
-            onChange={(e) => switchLandlord(parseInt(e.target.value))}
-            className="bg-white/10 border-none rounded-lg px-2.5 py-1 text-white focus:outline-none focus:ring-1 focus:ring-emerald-400 text-xs cursor-pointer"
+        {/* Quick action links */}
+        <div className="flex items-center gap-2">
+          <Link
+            href="/payouts"
+            className="flex items-center gap-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition"
           >
-            <option value={1} className="text-gray-900">Chief Adebayo (VI, Lagos)</option>
-            <option value={2} className="text-gray-900">Alhaji Musa (Abuja)</option>
-            <option value={3} className="text-gray-900">Dr. (Mrs) Okafor (Lekki)</option>
-            <option value={4} className="text-gray-900">Engr. Folorunsho (Asokoro)</option>
-            <option value={5} className="text-gray-900">Barrister Nnamdi (Ikeja)</option>
-          </select>
+            <DollarSign className="w-3.5 h-3.5" /> Request Payout
+          </Link>
+          <Link
+            href="/messages"
+            className="flex items-center gap-1.5 bg-white/10 hover:bg-white/20 border border-white/20 text-white/80 text-xs font-semibold px-3 py-1.5 rounded-xl transition"
+          >
+            <User className="w-3.5 h-3.5" /> Messages
+          </Link>
         </div>
       </div>
 

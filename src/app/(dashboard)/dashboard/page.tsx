@@ -46,13 +46,11 @@ export default function DashboardPage() {
   const { user } = useAuth()
 
   useEffect(() => {
-    fetch('/api/dashboard')
-      .then((r) => r.json())
-      .then((d) => {
-        setData(d)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    import('@/lib/api-client').then(({ dashboardApi }) => {
+      dashboardApi.get()
+        .then((d: any) => { setData(d); setLoading(false) })
+        .catch(() => setLoading(false))
+    })
   }, [])
 
   if (loading) {

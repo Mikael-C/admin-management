@@ -44,8 +44,8 @@ export default function TenantsPage() {
     try {
       const statusParam = stat === 'All' ? '' : stat
       let url = `/api/tenants?search=${searchTerm}&page=${pageNum}&limit=10&status=${statusParam}`
-      if (role === 'agent' && user.agentId) {
-        url += `&agentId=${user.agentId}`
+      if (role === 'agent' && user?.agentId) {
+        url += `&agentId=${user?.agentId}`
       }
       const res = await fetch(url)
       const json = await res.json()
@@ -216,7 +216,7 @@ export default function TenantsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Tenants</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {role === 'agent'
-              ? `Showing tenants on properties assigned to ${user.name}`
+              ? `Showing tenants on properties assigned to ${user?.name}`
               : 'View and manage all tenant records across all properties.'}
           </p>
         </div>
@@ -458,3 +458,4 @@ export default function TenantsPage() {
     </div>
   )
 }
+

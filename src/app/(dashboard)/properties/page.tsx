@@ -28,8 +28,8 @@ export default function PropertiesPage() {
     state: 'Lagos',
     type: 'Residential',
     managementFee: '60000',
-    landlordId: user.landlordId ? user.landlordId.toString() : '1',
-    assignedAgentId: user.agentId ? user.agentId.toString() : '1',
+    landlordId: user?.landlordId ? user?.landlordId.toString() : '1',
+    assignedAgentId: user?.agentId ? user?.agentId.toString() : '1',
   })
 
   const fetchProperties = async (searchTerm: string, pageNum: number, stat: string) => {
@@ -37,10 +37,10 @@ export default function PropertiesPage() {
     try {
       const statusParam = stat === 'All' ? '' : stat
       let url = `/api/properties?search=${searchTerm}&page=${pageNum}&limit=10&status=${statusParam}`
-      if (role === 'landlord' && user.landlordId) {
-        url += `&landlordId=${user.landlordId}`
-      } else if (role === 'agent' && user.agentId) {
-        url += `&agentId=${user.agentId}`
+      if (role === 'landlord' && user?.landlordId) {
+        url += `&landlordId=${user?.landlordId}`
+      } else if (role === 'agent' && user?.agentId) {
+        url += `&agentId=${user?.agentId}`
       }
 
       const res = await fetch(url)
@@ -85,8 +85,8 @@ export default function PropertiesPage() {
           state: 'Lagos',
           type: 'Residential',
           managementFee: '60000',
-          landlordId: user.landlordId ? user.landlordId.toString() : '1',
-          assignedAgentId: user.agentId ? user.agentId.toString() : '1',
+          landlordId: user?.landlordId ? user?.landlordId.toString() : '1',
+          assignedAgentId: user?.agentId ? user?.agentId.toString() : '1',
         })
         await fetchProperties(search, page, status)
       }
@@ -134,9 +134,9 @@ export default function PropertiesPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Properties</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {role === 'agent'
-              ? `Showing properties assigned to ${user.name}`
+              ? `Showing properties assigned to ${user?.name}`
               : role === 'landlord'
-              ? `Showing properties owned by ${user.name}`
+              ? `Showing properties owned by ${user?.name}`
               : 'Manage all company real estate assets.'}
           </p>
         </div>
@@ -315,3 +315,4 @@ export default function PropertiesPage() {
     </div>
   )
 }
+

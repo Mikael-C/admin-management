@@ -34,8 +34,8 @@ export default function ExpensesPage() {
     setLoading(true)
     try {
       let url = `/api/expenses?search=${searchTerm}&page=${pageNum}&limit=50`
-      if (role === 'landlord' && user.landlordId) {
-        url += `&landlordId=${user.landlordId}`
+      if (role === 'landlord' && user?.landlordId) {
+        url += `&landlordId=${user?.landlordId}`
       }
       if (propId !== 'all') {
         url += `&propertyId=${propId}`
@@ -120,7 +120,7 @@ export default function ExpensesPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Expenses</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {role === 'landlord'
-              ? `Expenses recorded for properties owned by ${user.name}`
+              ? `Expenses recorded for properties owned by ${user?.name}`
               : 'Track all property, facility, and administrative operational expenses.'}
           </p>
         </div>
@@ -320,3 +320,4 @@ export default function ExpensesPage() {
     </div>
   )
 }
+

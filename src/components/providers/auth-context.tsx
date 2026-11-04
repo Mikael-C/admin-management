@@ -1,183 +1,132 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect } from 'react'
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
+import { authApi } from '@/lib/api-client'
 
-export type UserRole = 'admin' | 'landlord' | 'agent' | 'tenant'
+export type UserRole = 'super_admin' | 'admin' | 'landlord' | 'agent'
 
 export interface AuthUser {
-  id: string
+  id: number
   name: string
   email: string
   role: UserRole
-  landlordId?: number
-  agentId?: number
+  phone?: string
   avatar?: string
-}
-
-export const PRESET_USERS: Record<string, AuthUser> = {
-  admin: {
-    id: 'usr-admin',
-    name: 'System Admin',
-    email: 'admin@realestate.com',
-    role: 'admin',
-  },
-  landlord: {
-    id: 'usr-landlord-1',
-    name: 'Chief Adebayo (Landlord)',
-    email: 'landlord1@example.com',
-    role: 'landlord',
-    landlordId: 1,
-  },
-  landlord2: {
-    id: 'usr-landlord-2',
-    name: 'Alhaji Musa (Landlord 2)',
-    email: 'landlord2@example.com',
-    role: 'landlord',
-    landlordId: 2,
-  },
-  agent: {
-    id: 'usr-agent-1',
-    name: 'Sarah Jenkins (Senior Agent)',
-    email: 'agent1@example.com',
-    role: 'agent',
-    agentId: 1,
-  },
-  agent2: {
-    id: 'usr-agent-2',
-    name: 'Michael Okon (Field Agent)',
-    email: 'agent2@example.com',
-    role: 'agent',
-    agentId: 2,
-  },
+  landlordId?: number | null
+  agentId?: number | null
+  adminId?: number | null
 }
 
 interface AuthContextType {
-  user: AuthUser
-  role: UserRole
-  loginAs: (role: UserRole, targetId?: number) => void
-  loginWithEmail: (email: string) => boolean
-  switchRole: (role: UserRole) => void
-  switchLandlord: (landlordId: number, name?: string) => void
-  switchAgent: (agentId: number, name?: string) => void
+  user: AuthUser | null
+  role: UserRole | null
+  token: string | null
+  isLoading: boolean
+  isAuthenticated: boolean
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; redirectTo?: string }>
   logout: () => void
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-const STORAGE_KEY = 'real_estate_admin_auth_user'
+const TOKEN_KEY = 'estatepro_token'
+const USER_KEY = 'estatepro_user'
+
+// Public routes that don't require auth
+const PUBLIC_ROUTES = ['/login']
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<AuthUser>(PRESET_USERS.admin)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [token, setToken] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
   const pathname = usePathname()
 
-  // Load from localStorage on client mount
+  // Load saved session on mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) {
-        setUser(JSON.parse(saved))
+    const savedToken = localStorage.getItem(TOKEN_KEY)
+    const savedUser = localStorage.getItem(USER_KEY)
+
+    if (savedToken && savedUser) {
+      try {
+        setToken(savedToken)
+        setUser(JSON.parse(savedUser))
+      } catch {
+        localStorage.removeItem(TOKEN_KEY)
+        localStorage.removeItem(USER_KEY)
       }
-    } catch {
-      // ignore
+    }
+    setIsLoading(false)
+  }, [])
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isLoading && !user && !PUBLIC_ROUTES.includes(pathname)) {
+      router.push('/login')
+    }
+  }, [isLoading, user, pathname, router])
+
+  const login = useCallback(async (email: string, password: string) => {
+    try {
+      const res = await authApi.login(email, password)
+
+      const authUser: AuthUser = {
+        id: res.user.id,
+        name: res.user.name,
+        email: res.user.email,
+        role: res.user.role as UserRole,
+        phone: res.user.phone,
+        avatar: res.user.avatar,
+        landlordId: res.user.landlordId,
+        agentId: res.user.agentId,
+        adminId: res.user.adminId,
+      }
+
+      setToken(res.token)
+      setUser(authUser)
+      localStorage.setItem(TOKEN_KEY, res.token)
+      localStorage.setItem(USER_KEY, JSON.stringify(authUser))
+
+      return { success: true, redirectTo: res.redirectTo }
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Login failed. Please try again.' }
     }
   }, [])
 
-  const saveUser = (newUser: AuthUser) => {
-    setUser(newUser)
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newUser))
-    } catch {
-      // ignore
-    }
-  }
-
-  const loginAs = (role: UserRole, targetId?: number) => {
-    let selected = PRESET_USERS.admin
-    if (role === 'landlord') {
-      selected = targetId === 2 ? PRESET_USERS.landlord2 : PRESET_USERS.landlord
-    } else if (role === 'agent') {
-      selected = targetId === 2 ? PRESET_USERS.agent2 : PRESET_USERS.agent
-    }
-    saveUser(selected)
-
-    // Redirect to relevant dashboard
-    if (role === 'landlord') {
-      router.push('/landlord')
-    } else if (role === 'agent') {
-      router.push('/agent')
-    } else {
-      router.push('/dashboard')
-    }
-  }
-
-  const loginWithEmail = (email: string): boolean => {
-    const lower = email.toLowerCase()
-    let matched: AuthUser = PRESET_USERS.admin
-
-    if (lower.includes('landlord') || lower.includes('owner')) {
-      matched = PRESET_USERS.landlord
-    } else if (lower.includes('agent')) {
-      matched = PRESET_USERS.agent
-    }
-
-    saveUser(matched)
-    if (matched.role === 'landlord') {
-      router.push('/landlord')
-    } else if (matched.role === 'agent') {
-      router.push('/agent')
-    } else {
-      router.push('/dashboard')
-    }
-    return true
-  }
-
-  const switchRole = (newRole: UserRole) => {
-    loginAs(newRole)
-  }
-
-  const switchLandlord = (landlordId: number, name?: string) => {
-    const updated: AuthUser = {
-      ...user,
-      role: 'landlord',
-      landlordId,
-      name: name || `Landlord #${landlordId}`,
-    }
-    saveUser(updated)
-  }
-
-  const switchAgent = (agentId: number, name?: string) => {
-    const updated: AuthUser = {
-      ...user,
-      role: 'agent',
-      agentId,
-      name: name || `Agent #${agentId}`,
-    }
-    saveUser(updated)
-  }
-
-  const logout = () => {
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-    } catch {
-      // ignore
-    }
-    setUser(PRESET_USERS.admin)
+  const logout = useCallback(() => {
+    setToken(null)
+    setUser(null)
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(USER_KEY)
     router.push('/login')
-  }
+  }, [router])
+
+  const refreshUser = useCallback(async () => {
+    if (!token) return
+    try {
+      const res = await authApi.me()
+      const updated = { ...user, ...res.user } as AuthUser
+      setUser(updated)
+      localStorage.setItem(USER_KEY, JSON.stringify(updated))
+    } catch {
+      // Token expired - logout
+      logout()
+    }
+  }, [token, user, logout])
 
   return (
     <AuthContext.Provider
       value={{
         user,
-        role: user.role,
-        loginAs,
-        loginWithEmail,
-        switchRole,
-        switchLandlord,
-        switchAgent,
+        role: user?.role || null,
+        token,
+        isLoading,
+        isAuthenticated: !!user,
+        login,
         logout,
+        refreshUser,
       }}
     >
       {children}

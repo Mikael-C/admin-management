@@ -22,8 +22,8 @@ import {
 } from 'lucide-react'
 
 export default function AgentDashboardPage() {
-  const { user, switchAgent } = useAuth()
-  const activeAgentId = user.agentId || 1
+  const { user } = useAuth()
+  const agentId = user?.agentId
 
   const [loading, setLoading] = useState(true)
   const [data, setData] = useState<any>(null)
@@ -60,14 +60,13 @@ export default function AgentDashboardPage() {
   const [tenantStatusFilter, setTenantStatusFilter] = useState('all')
   const [maintStatusFilter, setMaintStatusFilter] = useState('all')
 
-  const fetchAgentData = async (agentId: number) => {
+  const fetchAgentData = async () => {
+    if (!agentId) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/agent/stats?agentId=${agentId}`)
-      if (res.ok) {
-        const json = await res.json()
-        setData(json)
-      }
+      const { agentsApi } = await import('@/lib/api-client')
+      const json = await agentsApi.stats(agentId)
+      setData(json)
     } catch (e) {
       console.error(e)
     } finally {
@@ -76,8 +75,8 @@ export default function AgentDashboardPage() {
   }
 
   useEffect(() => {
-    fetchAgentData(activeAgentId)
-  }, [activeAgentId])
+    fetchAgentData()
+  }, [agentId])
 
   // Handle Maintenance Request Submit
   const handleCreateMaintenance = async (e: React.FormEvent) => {
@@ -89,33 +88,20 @@ export default function AgentDashboardPage() {
 
     setSubmittingRequest(true)
     try {
-      const res = await fetch('/api/maintenance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          propertyId: parseInt(newRequest.propertyId),
-          agentId: activeAgentId,
-          requestedByName: user.name,
-          title: newRequest.title,
-          description: newRequest.description,
-          category: newRequest.category,
-          priority: newRequest.priority,
-          estimatedCost: parseFloat(newRequest.estimatedCost) || 0,
-        }),
+      const { maintenanceApi } = await import('@/lib/api-client')
+      await maintenanceApi.create({
+        propertyId: parseInt(newRequest.propertyId),
+        agentId: agentId,
+        requestedByName: user?.name,
+        title: newRequest.title,
+        description: newRequest.description,
+        category: newRequest.category,
+        priority: newRequest.priority,
+        estimatedCost: parseFloat(newRequest.estimatedCost) || 0,
       })
-
-      if (res.ok) {
-        setShowRequestModal(false)
-        setNewRequest({
-          propertyId: '',
-          title: '',
-          description: '',
-          category: 'Plumbing',
-          priority: 'Medium',
-          estimatedCost: '50000',
-        })
-        await fetchAgentData(activeAgentId)
-      }
+      setShowRequestModal(false)
+      setNewRequest({ propertyId: '', title: '', description: '', category: 'Plumbing', priority: 'Medium', estimatedCost: '50000' })
+      await fetchAgentData()
     } catch (err) {
       console.error(err)
     } finally {
@@ -130,23 +116,16 @@ export default function AgentDashboardPage() {
 
     setSavingStatus(true)
     try {
-      const res = await fetch('/api/maintenance', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: updatingTicket.id,
-          status: updateStatus,
-          notes: updateNotes,
-          actualCost: updateCost ? parseFloat(updateCost) : undefined,
-        }),
+      const { maintenanceApi } = await import('@/lib/api-client')
+      await maintenanceApi.patch(updatingTicket.id, {
+        status: updateStatus,
+        notes: updateNotes,
+        actualCost: updateCost ? parseFloat(updateCost) : undefined,
       })
-
-      if (res.ok) {
-        setUpdatingTicket(null)
-        setUpdateNotes('')
-        setUpdateCost('')
-        await fetchAgentData(activeAgentId)
-      }
+      setUpdatingTicket(null)
+      setUpdateNotes('')
+      setUpdateCost('')
+      await fetchAgentData()
     } catch (err) {
       console.error(err)
     } finally {
@@ -161,22 +140,15 @@ export default function AgentDashboardPage() {
 
     setSavingTenant(true)
     try {
-      const res = await fetch('/api/tenants', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: updatingTenant.id,
-          status: tenantStatus,
-          notes: tenantNotes,
-          vacatedDate: tenantStatus === 'Vacated' ? vacatedDate : undefined,
-        }),
+      const { tenantsApi } = await import('@/lib/api-client')
+      await tenantsApi.patch(updatingTenant.id, {
+        status: tenantStatus,
+        notes: tenantNotes,
+        vacatedDate: tenantStatus === 'Vacated' ? vacatedDate : undefined,
       })
-
-      if (res.ok) {
-        setUpdatingTenant(null)
-        setTenantNotes('')
-        await fetchAgentData(activeAgentId)
-      }
+      setUpdatingTenant(null)
+      setTenantNotes('')
+      await fetchAgentData()
     } catch (err) {
       console.error(err)
     } finally {
@@ -198,7 +170,7 @@ export default function AgentDashboardPage() {
       <div className="text-center py-20 bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800">
         <p className="text-gray-500">Could not retrieve agent records.</p>
         <button
-          onClick={() => fetchAgentData(activeAgentId)}
+          onClick={() => fetchAgentData()}
           className="mt-3 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
         >
           Try Again
@@ -236,16 +208,16 @@ export default function AgentDashboardPage() {
               <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-purple-500/20 text-purple-300 border border-purple-500/40">
                 Property Agent Portal
               </span>
-              <span className="text-xs text-white/60">• Assigned Agent #{activeAgentId}</span>
+              <span className="text-xs text-white/60">• Assigned Agent #{agentId}</span>
             </div>
-            <h1 className="text-2xl font-bold mt-1 text-white">{user.name}</h1>
+            <h1 className="text-2xl font-bold mt-1 text-white">{user?.name}</h1>
             <p className="text-xs text-white/70">
               Responsible for {stats.assignedPropertiesCount} assigned properties &bull; Maintenance & tenant turnover management
             </p>
           </div>
         </div>
 
-        {/* Action Button & Switcher */}
+        {/* Action Button */}
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowRequestModal(true)}
@@ -253,18 +225,6 @@ export default function AgentDashboardPage() {
           >
             <Plus className="w-4 h-4" /> Request Maintenance
           </button>
-
-          <div className="flex items-center gap-2 bg-black/30 p-1.5 rounded-xl border border-white/10 text-xs">
-            <span className="text-white/60 pl-2">Viewing as:</span>
-            <select
-              value={activeAgentId}
-              onChange={(e) => switchAgent(parseInt(e.target.value))}
-              className="bg-white/10 border-none rounded-lg px-2 py-1 text-white focus:outline-none focus:ring-1 focus:ring-purple-400 text-xs cursor-pointer"
-            >
-              <option value={1} className="text-gray-900">Sarah Jenkins (Agent 1)</option>
-              <option value={2} className="text-gray-900">Michael Okon (Agent 2)</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -393,7 +353,7 @@ export default function AgentDashboardPage() {
           <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 bg-white dark:bg-gray-900 p-4 rounded-xl border border-gray-200 dark:border-gray-800">
             <div>
               <h2 className="text-base font-bold text-gray-900 dark:text-white">
-                Properties Assigned to {user.name}
+                Properties Assigned to {user?.name}
               </h2>
               <p className="text-xs text-gray-500">
                 You only have visibility and management permissions over these assigned properties.
@@ -1025,3 +985,6 @@ export default function AgentDashboardPage() {
     </div>
   )
 }
+
+
+

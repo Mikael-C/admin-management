@@ -25,8 +25,8 @@ export default function RentsPage() {
     setLoading(true)
     try {
       let url = `/api/rents?search=${searchTerm}&page=${pageNum}&limit=50`
-      if (role === 'landlord' && user.landlordId) {
-        url += `&landlordId=${user.landlordId}`
+      if (role === 'landlord' && user?.landlordId) {
+        url += `&landlordId=${user?.landlordId}`
       }
       if (propId !== 'all') {
         url += `&propertyId=${propId}`
@@ -83,7 +83,7 @@ export default function RentsPage() {
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Rents & Revenue</h1>
           <p className="text-sm text-gray-500 dark:text-gray-400">
             {role === 'landlord'
-              ? `Rent receipts and collections for properties owned by ${user.name}`
+              ? `Rent receipts and collections for properties owned by ${user?.name}`
               : 'Complete company rent ledger and revenue history across all properties.'}
           </p>
         </div>
@@ -153,3 +153,4 @@ export default function RentsPage() {
     </div>
   )
 }
+

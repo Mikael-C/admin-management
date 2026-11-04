@@ -1,0 +1,5 @@
+node_modules/
+.env
+*.log
+prisma/landlord-credentials.json
+dist/

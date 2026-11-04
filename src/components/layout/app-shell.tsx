@@ -16,6 +16,10 @@ const pageTitles: Record<string, string> = {
   '/tenants': 'Tenants',
   '/rents': 'Rents & Revenue',
   '/expenses': 'Expenses',
+  '/messages': 'Messages',
+  '/payouts': 'Payout Requests',
+  '/profile': 'My Profile',
+  '/ledger': 'Ledger',
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
