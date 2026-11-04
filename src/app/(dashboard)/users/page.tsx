@@ -62,29 +62,21 @@ export default function UsersPage() {
     setCreating(true)
 
     try {
-      const res = await fetch('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      })
+      const { usersApi } = await import('@/lib/api-client')
+      await usersApi.create(form)
 
-      if (res.ok) {
-        setShowModal(false)
-        setForm({
-          name: '',
-          email: '',
-          role: 'landlord',
-          phone: '',
-          landlordId: '',
-          agentId: '',
-        })
-        await fetchUsers()
-      } else {
-        const data = await res.json()
-        setErrorMsg(data.error || 'Failed to create user')
-      }
-    } catch {
-      setErrorMsg('Network error. Could not create user.')
+      setShowModal(false)
+      setForm({
+        name: '',
+        email: '',
+        role: 'landlord',
+        phone: '',
+        landlordId: '',
+        agentId: '',
+      })
+      await fetchUsers()
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Failed to create user')
     } finally {
       setCreating(false)
     }

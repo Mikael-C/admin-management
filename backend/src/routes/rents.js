@@ -53,9 +53,19 @@ router.get('/', async (req, res, next) => {
       prisma.rent.count({ where })
     ])
 
-    const totalRevenue = rents.reduce((sum, r) => sum + (r.credit || r.amountPaid || 0), 0)
+    const totalCredit = rents.reduce((sum, r) => sum + (r.credit || r.amountPaid || 0), 0)
+    const totalDebit = rents.reduce((sum, r) => sum + (r.debit || 0), 0)
 
-    res.json({ rents, total, totalRevenue, page: parseInt(page), limit: parseInt(limit) })
+    res.json({
+      rents,
+      total,
+      totalRevenue: totalCredit,
+      totalCredit,
+      totalDebit,
+      pages: Math.ceil(total / parseInt(limit)) || 1,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    })
   } catch (err) {
     next(err)
   }

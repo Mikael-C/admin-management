@@ -43,14 +43,20 @@ export default function TenantsPage() {
     setLoading(true)
     try {
       const statusParam = stat === 'All' ? '' : stat
-      let url = `/api/tenants?search=${searchTerm}&page=${pageNum}&limit=10&status=${statusParam}`
-      if (role === 'agent' && user?.agentId) {
-        url += `&agentId=${user?.agentId}`
+      const params: Record<string, string> = {
+        search: searchTerm,
+        page: String(pageNum),
+        limit: '10',
       }
-      const res = await fetch(url)
-      const json = await res.json()
+      if (statusParam) params.status = statusParam
+      if (role === 'agent' && user?.agentId) {
+        params.agentId = String(user?.agentId)
+      }
+
+      const { tenantsApi } = await import('@/lib/api-client')
+      const json = await tenantsApi.list(params)
       setData(json.tenants || [])
-      setTotalPages(json.pages || 1)
+      setTotalPages(json.pages || Math.ceil((json.total || 0) / 10) || 1)
       setTotalItems(json.total || 0)
     } catch (e) {
       console.error(e)
@@ -72,21 +78,15 @@ export default function TenantsPage() {
 
     setSavingStatus(true)
     try {
-      const res = await fetch('/api/tenants', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: updatingTenant.id,
-          status: tenantStatus,
-          notes: tenantNotes,
-          vacatedDate: tenantStatus === 'Vacated' ? vacatedDate : undefined,
-        }),
+      const { tenantsApi } = await import('@/lib/api-client')
+      await tenantsApi.patch(updatingTenant.id, {
+        status: tenantStatus,
+        notes: tenantNotes,
+        vacatedDate: tenantStatus === 'Vacated' ? vacatedDate : undefined,
       })
 
-      if (res.ok) {
-        setUpdatingTenant(null)
-        await fetchTenants(search, page, status)
-      }
+      setUpdatingTenant(null)
+      await fetchTenants(search, page, status)
     } catch (e) {
       console.error(e)
     } finally {
@@ -98,30 +98,25 @@ export default function TenantsPage() {
     e.preventDefault()
     setAddingTenant(true)
     try {
-      const res = await fetch('/api/tenants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newTenant,
-          propertyId: parseInt(newTenant.propertyId) || 1,
-          rentAmount: parseFloat(newTenant.rentAmount) || 1500000,
-        }),
+      const { tenantsApi } = await import('@/lib/api-client')
+      await tenantsApi.create({
+        ...newTenant,
+        propertyId: parseInt(newTenant.propertyId) || 1,
+        rentAmount: parseFloat(newTenant.rentAmount) || 1500000,
       })
 
-      if (res.ok) {
-        setShowAddModal(false)
-        setNewTenant({
-          name: '',
-          phone: '',
-          email: '',
-          propertyId: '1',
-          rentAmount: '2500000',
-          lastPaymentDate: new Date().toISOString().split('T')[0],
-          nextDueDate: '2027-09-01',
-          status: 'Current',
-        })
-        await fetchTenants(search, page, status)
-      }
+      setShowAddModal(false)
+      setNewTenant({
+        name: '',
+        phone: '',
+        email: '',
+        propertyId: '1',
+        rentAmount: '2500000',
+        lastPaymentDate: new Date().toISOString().split('T')[0],
+        nextDueDate: '2027-09-01',
+        status: 'Current',
+      })
+      await fetchTenants(search, page, status)
     } catch (e) {
       console.error(e)
     } finally {

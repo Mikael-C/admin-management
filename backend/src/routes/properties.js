@@ -61,7 +61,18 @@ router.get('/', async (req, res, next) => {
       prisma.property.count({ where })
     ])
 
-    res.json({ properties, total, page: parseInt(page), limit: parseInt(limit) })
+    const formattedProperties = properties.map(p => ({
+      ...p,
+      assignedAgent: p.agent,
+    }))
+
+    res.json({
+      properties: formattedProperties,
+      total,
+      pages: Math.ceil(total / parseInt(limit)) || 1,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    })
   } catch (err) {
     next(err)
   }

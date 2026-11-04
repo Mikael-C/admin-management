@@ -33,18 +33,22 @@ export default function ExpensesPage() {
   const fetchExpenses = async (searchTerm: string, pageNum: number, propId: string) => {
     setLoading(true)
     try {
-      let url = `/api/expenses?search=${searchTerm}&page=${pageNum}&limit=50`
+      const params: Record<string, string> = {
+        search: searchTerm,
+        page: String(pageNum),
+        limit: '50',
+      }
       if (role === 'landlord' && user?.landlordId) {
-        url += `&landlordId=${user?.landlordId}`
+        params.landlordId = String(user?.landlordId)
       }
       if (propId !== 'all') {
-        url += `&propertyId=${propId}`
+        params.propertyId = propId
       }
 
-      const res = await fetch(url)
-      const json = await res.json()
+      const { expensesApi } = await import('@/lib/api-client')
+      const json = await expensesApi.list(params)
       setData(json.expenses || [])
-      setTotalPages(json.pages || 1)
+      setTotalPages(json.pages || Math.ceil((json.total || 0) / 50) || 1)
       setTotalItems(json.total || 0)
       setTotalDebit(json.totalDebit || 0)
     } catch (e) {
@@ -65,27 +69,22 @@ export default function ExpensesPage() {
     e.preventDefault()
     setAddingExpense(true)
     try {
-      const res = await fetch('/api/expenses', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newExpense,
-          propertyId: parseInt(newExpense.propertyId) || 1,
-          debit: parseFloat(newExpense.debit) || 0,
-        }),
+      const { expensesApi } = await import('@/lib/api-client')
+      await expensesApi.create({
+        ...newExpense,
+        propertyId: parseInt(newExpense.propertyId) || 1,
+        debit: parseFloat(newExpense.debit) || 0,
       })
 
-      if (res.ok) {
-        setShowAddModal(false)
-        setNewExpense({
-          propertyId: '1',
-          description: '',
-          debit: '50000',
-          category: 'Maintenance',
-          period: 'Oct 2026',
-        })
-        await fetchExpenses(search, page, propertyIdFilter)
-      }
+      setShowAddModal(false)
+      setNewExpense({
+        propertyId: '1',
+        description: '',
+        debit: '50000',
+        category: 'Maintenance',
+        period: 'Oct 2026',
+      })
+      await fetchExpenses(search, page, propertyIdFilter)
     } catch (err) {
       console.error(err)
     } finally {

@@ -36,17 +36,22 @@ export default function PropertiesPage() {
     setLoading(true)
     try {
       const statusParam = stat === 'All' ? '' : stat
-      let url = `/api/properties?search=${searchTerm}&page=${pageNum}&limit=10&status=${statusParam}`
+      const params: Record<string, string> = {
+        search: searchTerm,
+        page: String(pageNum),
+        limit: '10',
+      }
+      if (statusParam) params.status = statusParam
       if (role === 'landlord' && user?.landlordId) {
-        url += `&landlordId=${user?.landlordId}`
+        params.landlordId = String(user?.landlordId)
       } else if (role === 'agent' && user?.agentId) {
-        url += `&agentId=${user?.agentId}`
+        params.agentId = String(user?.agentId)
       }
 
-      const res = await fetch(url)
-      const json = await res.json()
+      const { propertiesApi } = await import('@/lib/api-client')
+      const json = await propertiesApi.list(params)
       setData(json.properties || [])
-      setTotalPages(json.pages || 1)
+      setTotalPages(json.pages || Math.ceil((json.total || 0) / 10) || 1)
       setTotalItems(json.total || 0)
     } catch (e) {
       console.error(e)
@@ -66,30 +71,25 @@ export default function PropertiesPage() {
     e.preventDefault()
     setAdding(true)
     try {
-      const res = await fetch('/api/properties', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...newProp,
-          managementFee: parseFloat(newProp.managementFee) || 50000,
-          landlordId: parseInt(newProp.landlordId) || 1,
-          assignedAgentId: parseInt(newProp.assignedAgentId) || 1,
-        }),
+      const { propertiesApi } = await import('@/lib/api-client')
+      await propertiesApi.create({
+        ...newProp,
+        managementFee: parseFloat(newProp.managementFee) || 50000,
+        landlordId: parseInt(newProp.landlordId) || 1,
+        agentId: parseInt(newProp.assignedAgentId) || 1,
       })
-      if (res.ok) {
-        setShowAddModal(false)
-        setNewProp({
-          name: '',
-          address: '',
-          city: 'Lagos',
-          state: 'Lagos',
-          type: 'Residential',
-          managementFee: '60000',
-          landlordId: user?.landlordId ? user?.landlordId.toString() : '1',
-          assignedAgentId: user?.agentId ? user?.agentId.toString() : '1',
-        })
-        await fetchProperties(search, page, status)
-      }
+      setShowAddModal(false)
+      setNewProp({
+        name: '',
+        address: '',
+        city: 'Lagos',
+        state: 'Lagos',
+        type: 'Residential',
+        managementFee: '60000',
+        landlordId: user?.landlordId ? user?.landlordId.toString() : '1',
+        assignedAgentId: user?.agentId ? user?.agentId.toString() : '1',
+      })
+      await fetchProperties(search, page, status)
     } catch (err) {
       console.error(err)
     } finally {

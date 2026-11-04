@@ -50,7 +50,15 @@ router.get('/', async (req, res, next) => {
 
     const totalExpenses = expenses.reduce((sum, e) => sum + (e.debit || 0), 0)
 
-    res.json({ expenses, total, totalExpenses, page: parseInt(page), limit: parseInt(limit) })
+    res.json({
+      expenses,
+      total,
+      totalExpenses,
+      totalDebit: totalExpenses,
+      pages: Math.ceil(total / parseInt(limit)) || 1,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    })
   } catch (err) {
     next(err)
   }

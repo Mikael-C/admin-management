@@ -35,11 +35,9 @@ export default function MaintenancePage() {
   const fetchMaintenance = async () => {
     setLoading(true)
     try {
-      const res = await fetch('/api/maintenance')
-      if (res.ok) {
-        const json = await res.json()
-        setItems(json.maintenance || [])
-      }
+      const { maintenanceApi } = await import('@/lib/api-client')
+      const json = await maintenanceApi.list()
+      setItems(json.maintenance || json.requests || [])
     } catch (e) {
       console.error(e)
     } finally {
@@ -57,21 +55,15 @@ export default function MaintenancePage() {
 
     setSavingStatus(true)
     try {
-      const res = await fetch('/api/maintenance', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: updatingTicket.id,
-          status: updateStatus,
-          notes: updateNotes,
-          actualCost: updateCost ? parseFloat(updateCost) : undefined,
-        }),
+      const { maintenanceApi } = await import('@/lib/api-client')
+      await maintenanceApi.patch(updatingTicket.id, {
+        status: updateStatus,
+        notes: updateNotes,
+        actualCost: updateCost ? parseFloat(updateCost) : undefined,
       })
 
-      if (res.ok) {
-        setUpdatingTicket(null)
-        await fetchMaintenance()
-      }
+      setUpdatingTicket(null)
+      await fetchMaintenance()
     } catch (e) {
       console.error(e)
     } finally {

@@ -7,6 +7,8 @@ import { SearchInput } from '@/components/ui/search-input'
 import { Plus, Eye } from 'lucide-react'
 import Link from 'next/link'
 
+import { landlordsApi } from '@/lib/api-client'
+
 export default function LandlordsPage() {
   const [data, setData] = useState([])
   const [loading, setLoading] = useState(true)
@@ -18,10 +20,9 @@ export default function LandlordsPage() {
   const fetchLandlords = async (searchTerm: string, pageNum: number) => {
     setLoading(true)
     try {
-      const res = await fetch(`/api/landlords?search=${searchTerm}&page=${pageNum}&limit=10`)
-      const json = await res.json()
+      const json = await landlordsApi.list({ search: searchTerm, page: String(pageNum), limit: '10' })
       setData(json.landlords || [])
-      setTotalPages(json.pages || 1)
+      setTotalPages(json.pages || Math.ceil((json.total || 0) / 10) || 1)
       setTotalItems(json.total || 0)
     } catch (e) {
       console.error(e)

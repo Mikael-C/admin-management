@@ -48,7 +48,14 @@ router.get('/', async (req, res, next) => {
       prisma.maintenanceRequest.count({ where })
     ])
 
-    res.json({ requests, total, page: parseInt(page), limit: parseInt(limit) })
+    res.json({
+      requests,
+      maintenance: requests,
+      total,
+      pages: Math.ceil(total / parseInt(limit)) || 1,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    })
   } catch (err) {
     next(err)
   }

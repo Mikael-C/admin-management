@@ -16,16 +16,19 @@ export default function LandlordDetail() {
 
   useEffect(() => {
     if (!id) return
-    fetch(`/api/landlords/${id}`)
-      .then((r) => {
-        if (r.status === 404) { setNotFound(true); return null }
-        return r.json()
-      })
-      .then((d) => {
-        if (d) setLandlord(d)
-        setLoading(false)
-      })
-      .catch(() => setLoading(false))
+    import('@/lib/api-client').then(({ landlordsApi }) => {
+      landlordsApi.get(Number(id))
+        .then((d: any) => {
+          if (d?.landlord) setLandlord(d.landlord)
+          else if (d) setLandlord(d)
+          else setNotFound(true)
+          setLoading(false)
+        })
+        .catch(() => {
+          setNotFound(true)
+          setLoading(false)
+        })
+    })
   }, [id])
 
   if (loading) {

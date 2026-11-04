@@ -56,7 +56,80 @@ router.get('/', async (req, res, next) => {
       return rest
     })
 
-    res.json({ landlords: sanitized, total, page: parseInt(page), limit: parseInt(limit) })
+    res.json({
+      landlords: sanitized,
+      total,
+      pages: Math.ceil(total / parseInt(limit)) || 1,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    })
+  } catch (err) {
+    next(err)
+  }
+})
+
+// ===========================
+// GET /api/landlords/search
+// Search landlord by exact or partial name with full property and tenant breakdown
+// ===========================
+router.get('/search', async (req, res, next) => {
+  try {
+    const { name } = req.query
+    if (!name) return res.status(400).json({ error: 'Search name query is required.' })
+
+    const landlord = await prisma.landlord.findFirst({
+      where: {
+        name: { contains: String(name), mode: 'insensitive' }
+      },
+      include: {
+        properties: {
+          include: {
+            tenants: true,
+            rents: true,
+            expenses: true,
+          }
+        }
+      }
+    })
+
+    if (!landlord) {
+      return res.json({ landlord: null })
+    }
+
+    const allRents = landlord.properties.flatMap(p => p.rents)
+    const allExpenses = landlord.properties.flatMap(p => p.expenses)
+    const totalRentCollected = allRents.reduce((s, r) => s + (r.credit || r.amountPaid || 0), 0)
+    const totalExpenses = allExpenses.reduce((s, e) => s + (e.debit || 0), 0)
+
+    const formattedProperties = landlord.properties.map(p => {
+      const activeTenant = p.tenants.find(t => t.status === 'Current') || p.tenants[0]
+      return {
+        id: p.id,
+        name: p.name || p.address || `Property #${p.id}`,
+        address: p.address || '',
+        type: p.type || 'Residential',
+        status: p.status || 'Active',
+        rentAmount: activeTenant?.rentAmount || 0,
+        tenantName: activeTenant?.name || 'Vacant / None',
+        tenantPhone: activeTenant?.phone || '—',
+        tenantStatus: activeTenant?.status || 'Vacant',
+      }
+    })
+
+    res.json({
+      landlord: {
+        id: landlord.id,
+        name: landlord.name,
+        phone: landlord.phone || '',
+        email: landlord.email || '',
+        address: landlord.address || '',
+        totalProperties: landlord.properties.length,
+        properties: formattedProperties,
+        totalRentCollected,
+        totalExpenses,
+        netBalance: totalRentCollected - totalExpenses,
+      }
+    })
   } catch (err) {
     next(err)
   }
@@ -68,6 +141,7 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const id = parseInt(req.params.id)
+    if (isNaN(id)) return res.status(400).json({ error: 'Invalid landlord ID' })
 
     // Landlords can only view their own profile
     if (req.user.role === 'landlord' && req.user.landlordProfile?.id !== id) {
@@ -80,7 +154,9 @@ router.get('/:id', async (req, res, next) => {
         user: { select: { id: true, email: true, isActive: true, createdAt: true, role: true } },
         properties: {
           include: {
-            _count: { select: { tenants: true } },
+            tenants: true,
+            rents: true,
+            expenses: true,
             agent: { select: { id: true, name: true } },
           }
         },
@@ -95,7 +171,19 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Landlord not found.' })
     }
 
-    res.json({ landlord })
+    const allRents = landlord.properties.flatMap(p => p.rents)
+    const allExpenses = landlord.properties.flatMap(p => p.expenses)
+    const totalRentCollected = allRents.reduce((s, r) => s + (r.credit || r.amountPaid || 0), 0)
+    const totalExpenses = allExpenses.reduce((s, e) => s + (e.debit || 0), 0)
+
+    res.json({
+      landlord: {
+        ...landlord,
+        totalRentCollected,
+        totalExpenses,
+        netBalance: totalRentCollected - totalExpenses
+      }
+    })
   } catch (err) {
     next(err)
   }

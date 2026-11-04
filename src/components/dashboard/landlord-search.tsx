@@ -50,22 +50,17 @@ export function LandlordSearch() {
     setSearched(false)
 
     try {
-      const res = await fetch(`/api/landlords/search?name=${encodeURIComponent(trimmed)}`)
-      const data = await res.json()
-
-      if (!res.ok) {
-        setError(data.error ?? 'Search failed. Please try again.')
-        return
-      }
+      const { api } = await import('@/lib/api-client')
+      const data: any = await api.get('/landlords/search', { name: trimmed })
 
       setSearched(true)
-      if (data.landlord) {
+      if (data?.landlord) {
         setResult(data.landlord)
       } else {
         setNotFound(true)
       }
-    } catch {
-      setError('Network error. Please check your connection.')
+    } catch (err: any) {
+      setError(err?.message || 'Search failed. Please try again.')
     } finally {
       setLoading(false)
     }

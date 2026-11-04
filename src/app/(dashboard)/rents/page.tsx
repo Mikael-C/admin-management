@@ -24,18 +24,22 @@ export default function RentsPage() {
   const fetchRents = async (searchTerm: string, pageNum: number, propId: string) => {
     setLoading(true)
     try {
-      let url = `/api/rents?search=${searchTerm}&page=${pageNum}&limit=50`
+      const params: Record<string, string> = {
+        search: searchTerm,
+        page: String(pageNum),
+        limit: '50',
+      }
       if (role === 'landlord' && user?.landlordId) {
-        url += `&landlordId=${user?.landlordId}`
+        params.landlordId = String(user?.landlordId)
       }
       if (propId !== 'all') {
-        url += `&propertyId=${propId}`
+        params.propertyId = propId
       }
 
-      const res = await fetch(url)
-      const json = await res.json()
+      const { rentsApi } = await import('@/lib/api-client')
+      const json = await rentsApi.list(params)
       setData(json.rents || [])
-      setTotalPages(json.pages || 1)
+      setTotalPages(json.pages || Math.ceil((json.total || 0) / 50) || 1)
       setTotalItems(json.total || 0)
       setTotals({ debit: json.totalDebit || 0, credit: json.totalCredit || 0 })
     } catch (e) {
