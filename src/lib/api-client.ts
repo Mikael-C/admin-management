@@ -1,13 +1,13 @@
 // API client for communicating with the Express backend
 // Set NEXT_PUBLIC_API_URL in your .env.local file
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000').replace(/\/+$/, '')
 
 class ApiClient {
   private baseUrl: string
 
   constructor(baseUrl: string) {
-    this.baseUrl = baseUrl
+    this.baseUrl = baseUrl.replace(/\/+$/, '')
   }
 
   private getAuthHeaders(): Record<string, string> {
@@ -27,7 +27,9 @@ class ApiClient {
     body?: unknown,
     params?: Record<string, string>
   ): Promise<T> {
-    let url = `${this.baseUrl}/api${path}`
+    const cleanPath = path.startsWith('/') ? path : `/${path}`
+    const apiPrefix = this.baseUrl.endsWith('/api') ? '' : '/api'
+    let url = `${this.baseUrl}${apiPrefix}${cleanPath}`
     if (params) {
       const searchParams = new URLSearchParams(
         Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '') as [string, string][]

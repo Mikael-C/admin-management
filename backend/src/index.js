@@ -24,14 +24,69 @@ const ledgerRoutes = require('./routes/ledger')
 const app = express()
 const PORT = process.env.PORT || 5000
 
+// Trust reverse proxy (Render, Vercel, Cloudflare, etc.)
+app.set('trust proxy', 1)
+
 // ===========================
-// SECURITY MIDDLEWARE
+// SECURITY & CORS MIDDLEWARE
 // ===========================
 app.use(helmet({
   crossOriginResourcePolicy: { policy: 'cross-origin' }
 }))
 
-// Rate limiting
+// Parse configured frontend URLs (supports comma-separated list and strips trailing slashes)
+const envOrigins = (process.env.FRONTEND_URL || '')
+  .split(',')
+  .map(url => url.trim().replace(/\/+$/, ''))
+  .filter(Boolean)
+
+const defaultOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://admin-management-beryl.vercel.app/',
+  'https://admin-management-v4fl.onrender.com/',
+]
+
+const allowedOrigins = [...new Set([...envOrigins, ...defaultOrigins])]
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, curl, Postman, server-to-server)
+    if (!origin) return callback(null, true)
+
+    const cleanOrigin = origin.replace(/\/+$/, '')
+
+    let isVercel = false
+    try {
+      const hostname = new URL(cleanOrigin).hostname
+      isVercel = hostname.endsWith('.vercel.app')
+    } catch {
+      isVercel = false
+    }
+
+    const isAllowed =
+      process.env.NODE_ENV === 'development' ||
+      allowedOrigins.includes(cleanOrigin) ||
+      allowedOrigins.some(o => cleanOrigin.startsWith(o)) ||
+      isVercel ||
+      cleanOrigin.endsWith('.onrender.com')
+
+    if (isAllowed) {
+      callback(null, true)
+    } else {
+      console.warn(`[CORS Blocked] Rejected origin: "${origin}". Allowed origins: ${JSON.stringify(allowedOrigins)}`)
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}))
+
+// Handle preflight OPTIONS requests across all routes
+app.options('*', cors())
+
+// Rate limiting (applied after CORS so CORS headers are preserved)
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 500,
@@ -46,33 +101,6 @@ const authLimiter = rateLimit({
   message: { error: 'Too many login attempts, please try again later.' }
 })
 app.use('/api/auth/login', authLimiter)
-
-// ===========================
-// CORS CONFIG
-// ===========================
-const allowedOrigins = [
-  process.env.FRONTEND_URL || 'http://localhost:3000',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  // Add your Render/Vercel frontend URL here
-  'https://real-estate-admin.vercel.app',
-  'https://real-estate-admin.onrender.com',
-]
-
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, curl, Postman)
-    if (!origin) return callback(null, true)
-    if (allowedOrigins.some(o => origin.startsWith(o)) || process.env.NODE_ENV === 'development') {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}))
 
 // ===========================
 // BODY PARSING
