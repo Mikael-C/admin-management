@@ -160,11 +160,16 @@ Rules:
     const is429 = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota')
 
     if (is429 && retryCount < MAX_RETRIES) {
-      // Parse the suggested retryDelay from the API response
-      const delayMatch = msg.match(/"retryDelay"\s*:\s*"([\d.]+)s"/)
-      let waitMs = 65000
+      // Parse suggested retryDelay ONLY from JSON structure like "retryDelay": "59.1s"
+      // Use strict pattern that won't match Prisma trace line numbers
+      const delayMatch = msg.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/)
+      let waitMs = 65000  // safe default: just over 1 minute
       if (delayMatch) {
-        waitMs = Math.ceil(parseFloat(delayMatch[1]) * 1000) + 3000
+        const secs = parseFloat(delayMatch[1])
+        // Sanity-check: retryDelay from Gemini is always <120s, never thousands
+        if (secs > 0 && secs < 120) {
+          waitMs = Math.ceil(secs * 1000) + 3000
+        }
       }
       const waitSec = Math.ceil(waitMs / 1000)
       process.stdout.write(`\n    ⏳ Rate limited — waiting ${waitSec}s (retry ${retryCount + 1}/${MAX_RETRIES})... `)
@@ -185,19 +190,34 @@ async function ensureLandlordInDB(mapping) {
     return landlord
   }
 
-  // Check if already created in a previous run
-  const existing = await prisma.landlord.findFirst({ where: { name: mapping.landlordName } })
-  if (existing) {
-    console.log(`  ♻️  Found existing landlord: ${existing.name} (ID=${existing.id})`)
-    return existing
+  // Check if landlord already created (by name or email) from a previous run
+  const existingByName = await prisma.landlord.findFirst({ where: { name: mapping.landlordName } })
+  if (existingByName) {
+    console.log(`  ♻️  Found existing landlord: ${existingByName.name} (ID=${existingByName.id})`)
+    return existingByName
   }
 
   console.log(`  📝 Creating new landlord: ${mapping.landlordName}`)
   const bcrypt = require('bcryptjs')
   const hash = await bcrypt.hash('Landlord@2024', 10)
-  const user = await prisma.user.create({
-    data: { name: mapping.landlordName, email: mapping.landlordEmail, password: hash, role: 'landlord' }
-  })
+
+  // If user with this email already exists (from a previous partial run), reuse it
+  let user = await prisma.user.findFirst({ where: { email: mapping.landlordEmail } })
+  if (user) {
+    console.log(`  ♻️  Reusing existing user: ${user.email} (ID=${user.id})`)
+  } else {
+    user = await prisma.user.create({
+      data: { name: mapping.landlordName, email: mapping.landlordEmail, password: hash, role: 'landlord' }
+    })
+  }
+
+  // Check if a landlord profile already exists for this user
+  const existingByUser = await prisma.landlord.findFirst({ where: { userId: user.id } })
+  if (existingByUser) {
+    console.log(`  ♻️  Found landlord profile for user: ${existingByUser.name} (ID=${existingByUser.id})`)
+    return existingByUser
+  }
+
   const landlord = await prisma.landlord.create({
     data: { name: mapping.landlordName, email: mapping.landlordEmail, phone: '', userId: user.id }
   })

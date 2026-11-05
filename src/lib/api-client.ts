@@ -213,8 +213,13 @@ export const newslettersApi = {
 
 // ─── Invoices & Receipts ─────────────────────────────────────
 export const invoicesApi = {
-  list: (page = 1, limit = 20, filters: Record<string, any> = {}) =>
-    api.get<any>('/invoices', { page: String(page), limit: String(limit), ...filters }),
+  list: (paramsOrPage?: number | Record<string, string>, limit = 25, filters: Record<string, any> = {}) => {
+    if (typeof paramsOrPage === 'object' && paramsOrPage !== null) {
+      return api.get<any>('/invoices', paramsOrPage)
+    }
+    const page = paramsOrPage || 1
+    return api.get<any>('/invoices', { page: String(page), limit: String(limit), ...filters })
+  },
   get: (id: number) => api.get<any>(`/invoices/${id}`),
   create: (data: any) => api.post('/invoices', data),
   updateStatus: (id: number, status: string, notes?: string) =>
